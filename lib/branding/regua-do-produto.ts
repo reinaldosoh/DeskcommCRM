@@ -42,7 +42,7 @@ export const REGUA_DO_PRODUTO: Regua = {
     base: [
       {
         chave: "--color-bg",
-        hex: "#faf9f6",
+        hex: "#f5f7fa",
       },
       {
         chave: "--color-surface",
@@ -159,7 +159,7 @@ export const REGUA_DO_PRODUTO: Regua = {
       },
     ],
     neutros: [
-      "#faf9f6",
+      "#f5f7fa",
       "#f3f1ec",
       "#e7e3da",
       "#d2cdbf",
