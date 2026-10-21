@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lerLoginCodexRenovandoSeProxima } from "@/lib/ai/credenciais/login-codex";
-import { OPENAI_CODEX_MODELS_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import { OPENAI_CODEX_ENDPOINT, OPENAI_CODEX_MODELS_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
 import { PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
 
 export interface ModeloDaAssinatura {
@@ -60,11 +60,12 @@ function urlDaListagem(): string {
 /**
  * Busca os modelos que a conta ChatGPT autorizou a listar, sempre no tenant atual.
  *
- * O destino é o BACKEND DO CODEX (`OPENAI_CODEX_MODELS_ENDPOINT`), não a API
- * pública: medido na #2602 com o mesmo token da assinatura, `/v1/models` na
- * `api.openai.com` devolve 403 `Missing scopes: api.model.read` e o backend do
- * Codex devolve 200 com `{ models: [{ slug, visibility: "list" }] }` — o
- * formato que a interpretação de baixo já conhece.
+ * Primeiro a API pública (`api.openai.com/v1/models`), que é o endereço que a
+ * documentação do Sign in with ChatGPT para apps manda usar; se ela recusar o
+ * token (401/403/404), o backend do Codex (`OPENAI_CODEX_MODELS_ENDPOINT`),
+ * que atendia o token antigo da #2602. Os dois devolvem
+ * `{ models: [{ slug, visibility: "list" }] }`, o formato que a interpretação
+ * de baixo já conhece.
  *
  * `null` continua significando UMA coisa só: não há conta conectada nesta
  * organização. Tudo mais (rede, HTTP fora de 200, formato desconhecido) é
@@ -75,23 +76,33 @@ export async function listarModelosDaAssinatura(orgId: string): Promise<ModeloDa
   const tokens = await lerLoginCodexRenovandoSeProxima({ admin, orgId });
   if (!tokens) return null;
 
-  let response: Response;
-  try {
-    response = await fetch(urlDaListagem(), {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
-      signal: AbortSignal.timeout(10_000),
-      redirect: "error",
-      cache: "no-store",
-    });
-  } catch (cause) {
-    // Sem resposta não há o que interpretar — e voltar `null` daqui fazia a
-    // rota acusar a conta conectada. Erro visível, espelho intocado.
-    throw new FalhaAoListarModelosDaAssinatura("sem_resposta_do_backend_do_codex", { cause });
+  // A ordem segue a documentação oficial do Sign in with ChatGPT para apps
+  // ("Models and inference"): `GET https://api.openai.com/v1/models` com o
+  // Bearer do login, devolvendo `{ models: [{ slug, visibility }] }`. O token
+  // do cliente dinâmico (`dynamic_agent_client`) recebe 401 no backend do
+  // Codex — medido em 2026-10-21 numa instalação real — e a doc pede para não
+  // apontar este fluxo para `backend-api`. O backend do Codex fica só como
+  // segunda tentativa, para o token antigo da #2602, que recebia 403 na API
+  // pública e 200 lá.
+  let response: Response | null = null;
+  for (const url of [`${OPENAI_CODEX_ENDPOINT}/models`, urlDaListagem()]) {
+    try {
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "error",
+        cache: "no-store",
+      });
+    } catch (cause) {
+      // Sem resposta não há o que interpretar — e voltar `null` daqui fazia a
+      // rota acusar a conta conectada. Erro visível, espelho intocado.
+      throw new FalhaAoListarModelosDaAssinatura("sem_resposta_do_backend_do_codex", { cause });
+    }
+    if (response.ok || ![401, 403, 404].includes(response.status)) break;
   }
-  if (!response.ok) {
-    // O 403 MEDIDO da #2602 (endpoint errado) caía exatamente aqui. Ele tinha
-    // de aparecer, não virar "Conecte a assinatura" em silêncio.
-    throw new FalhaAoListarModelosDaAssinatura(`http_${response.status}`, { status: response.status });
+  if (!response || !response.ok) {
+    const status = response?.status ?? 0;
+    throw new FalhaAoListarModelosDaAssinatura(`http_${status}`, { status });
   }
 
   const body: unknown = await response.json().catch(() => null);

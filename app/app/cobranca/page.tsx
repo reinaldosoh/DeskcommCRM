@@ -60,7 +60,7 @@ type Tabulacao = {
   created_at: string;
 };
 type Carteira = { id: string; nome: string; credor_nome: string };
-type Contato = { id: string; name: string | null; display_name: string | null; phone: string | null };
+type Contato = { id: string; name: string | null; display_name: string | null; phone_number: string | null };
 
 const DESFECHO: Record<string, { rotulo: string; tom: "success" | "warning" | "error" | "info" | "neutral" }> = {
   identidade_confirmada: { rotulo: "Identidade confirmada", tom: "info" },
@@ -156,14 +156,14 @@ export default async function Page() {
   if (idsDeContato.length > 0) {
     const { data: linhas } = await supabase
       .from("contacts")
-      .select("id, name, display_name, phone")
+      .select("id, name, display_name, phone_number")
       .eq("organization_id", org.orgId)
       .in("id", idsDeContato);
     for (const c of (linhas ?? []) as Contato[]) contatos.set(c.id, c);
   }
   const quem = (id: string | null) => {
     const c = id ? contatos.get(id) : undefined;
-    return nomeDoContato(c) ?? c?.phone ?? "Devedor";
+    return nomeDoContato(c) ?? c?.phone_number ?? "Devedor";
   };
   const credorDe = new Map(carteiras.map((c) => [c.id, c.credor_nome]));
 

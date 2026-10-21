@@ -54,7 +54,9 @@ import {
   listarModelosDaAssinaturaOuVazio,
 } from "./modelos-da-assinatura";
 
-/** O destino medido na issue: o backend do Codex, não a API pública. */
+/** O destino da doc do Sign in with ChatGPT para apps: a API pública. */
+const ENDPOINT_OFICIAL = "https://api.openai.com/v1/models";
+/** A segunda tentativa, para o token antigo da #2602. */
 const ENDPOINT_DO_CODEX = "https://chatgpt.com/backend-api/codex/models";
 
 function stubDeFetch(resposta: () => Promise<Response>) {
@@ -78,7 +80,7 @@ afterEach(() => {
 });
 
 describe("listarModelosDaAssinatura", () => {
-  it("(a) fala com o backend do Codex e regrava o espelho com a lista", async () => {
+  it("(a) fala com a API pública e regrava o espelho com a lista", async () => {
     const chamada = respondeCom({
       models: [
         { slug: "gpt-a", visibility: "list" },
@@ -90,7 +92,7 @@ describe("listarModelosDaAssinatura", () => {
 
     expect(chamada).toHaveBeenCalledTimes(1);
     const [url, init] = chamada.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url, "a listagem foi para o endpoint errado (#2602)").toBe(ENDPOINT_DO_CODEX);
+    expect(url, "a listagem foi para o endpoint errado").toBe(ENDPOINT_OFICIAL);
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer at");
     expect(modelos?.map((m) => m.model_id)).toEqual(["gpt-a"]);
     expect(update).toHaveBeenCalledWith({ models_available: ["gpt-a"] });
@@ -118,6 +120,20 @@ describe("listarModelosDaAssinatura", () => {
     expect((falha as FalhaAoListarModelosDaAssinatura).motivo).toBe("http_403");
     expect((falha as FalhaAoListarModelosDaAssinatura).status).toBe(403);
     expect(update, "uma falha não pode tocar no espelho").not.toHaveBeenCalled();
+  });
+
+  it("(a2) a API pública recusa o token (401) e o backend do Codex atende: lista vem de lá", async () => {
+    const chamada = stubDeFetch(async () => new Response("{}", { status: 401 }));
+    chamada.mockImplementationOnce(async () => new Response("{}", { status: 401 }));
+    chamada.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ models: [{ slug: "gpt-b", visibility: "list" }] }), { status: 200 }),
+    );
+
+    const modelos = await listarModelosDaAssinatura("org-1");
+
+    const urls = chamada.mock.calls.map((c) => (c as unknown as [string])[0]);
+    expect(urls).toEqual([ENDPOINT_OFICIAL, ENDPOINT_DO_CODEX]);
+    expect(modelos?.map((m) => m.model_id)).toEqual(["gpt-b"]);
   });
 
   it("(c) 200 em formato desconhecido não grava lixo — e não engole o problema", async () => {
@@ -159,11 +175,16 @@ describe("listarModelosDaAssinatura", () => {
 
   it("CODEX_CLIENT_VERSION declarado viaja como client_version (o parâmetro do Codex CLI)", async () => {
     vi.stubEnv("CODEX_CLIENT_VERSION", "0.160.1");
-    const chamada = respondeCom({ models: [{ slug: "gpt-a", visibility: "list" }] });
+    // Só a segunda tentativa (o backend do Codex) leva o parâmetro do CLI.
+    const chamada = stubDeFetch(async () => new Response("{}", { status: 401 }));
+    chamada.mockImplementationOnce(async () => new Response("{}", { status: 401 }));
+    chamada.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ models: [{ slug: "gpt-a", visibility: "list" }] }), { status: 200 }),
+    );
 
     await listarModelosDaAssinatura("org-1");
 
-    const [url] = chamada.mock.calls[0] as unknown as [string];
+    const [url] = chamada.mock.calls[1] as unknown as [string];
     expect(url).toBe(`${ENDPOINT_DO_CODEX}?client_version=0.160.1`);
   });
 });
