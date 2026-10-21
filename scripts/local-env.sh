@@ -47,7 +47,14 @@ has_local_env() {
 }
 
 local_ip() {
-  hostname -I 2>/dev/null | awk '{print $1}' || true
+  local ip
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+  # macOS não tem `hostname -I`: sem isto o .env.local caía em 127.0.0.1, que
+  # de dentro do contêiner é o próprio contêiner (app e worker sem Supabase).
+  if [[ -z "$ip" ]] && command -v ipconfig >/dev/null 2>&1; then
+    ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+  fi
+  printf '%s' "$ip"
 }
 
 choose_port() {
