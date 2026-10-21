@@ -4,7 +4,7 @@ Quem roteia a própria IA — **OmniRouter**, **9Router**, **FreellmAPI**, um
 LiteLLM hospedado, um proxy corporativo — pode apontar o CRM para o seu
 endpoint sem abrir mão de nada: a opção **"Provedor personalizado
 (compatível com OpenAI)"** aparece em **IA › Credenciais**, ao lado de
-Anthropic, OpenAI, Google, OpenRouter, DeepSeek e Requesty.
+Anthropic, OpenAI, Google, OpenRouter, DeepSeek, Requesty e ModelRouter.
 
 ## O que preencher
 

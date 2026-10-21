@@ -63,6 +63,14 @@ export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com';
 export const REQUESTY_ENDPOINT = 'https://router.requesty.ai/v1';
 
 /**
+ * O ModelRouter (modelrouter.id) é outro gateway OpenAI-compatível: uma chave
+ * dá acesso a modelos de vários fabricantes (Claude, GPT, Gemini, DeepSeek…).
+ * Mesma fábrica e mesmo `.chat()` da Requesty; o painel ainda pode apontar
+ * para um endpoint próprio, e a allowlist do egress segue o escolhido.
+ */
+export const MODELROUTER_ENDPOINT = 'https://modelrouter.id/v1';
+
+/**
  * O endpoint do CODEX — o mesmo login do ChatGPT, falando a API de resposta.
  *
  * A assinatura (`openai-assinatura`) não tem chave: o `access_token` SIWC
@@ -372,6 +380,11 @@ export function createDefaultRegistry(opts?: {
      */
     requesty: (apiKey, modelId, baseUrl) => {
       const endpoint = baseUrl ?? REQUESTY_ENDPOINT;
+      return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) }).chat(modelId);
+    },
+    /** ModelRouter: roteador OpenAI-compatível, mesma regra da Requesty. */
+    modelrouter: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? MODELROUTER_ENDPOINT;
       return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) }).chat(modelId);
     },
     /**

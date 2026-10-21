@@ -34,6 +34,7 @@ import {
   DEEPSEEK_ENDPOINT,
   OPENAI_CODEX_ENDPOINT,
   OPENROUTER_ENDPOINT,
+  MODELROUTER_ENDPOINT,
   REQUESTY_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
@@ -229,6 +230,8 @@ export function buildModel(
     // Requesty: roteador OpenAI-compatível, pelo mesmo `.chat()` do registry.
     case "requesty":
       return createOpenAI({ apiKey, baseURL: REQUESTY_ENDPOINT }).chat(modelId);
+    case "modelrouter":
+      return createOpenAI({ apiKey, baseURL: MODELROUTER_ENDPOINT }).chat(modelId);
     // Provedor personalizado (#1642): o endereço vem da credencial, junto da
     // chave. SEM endereço a chamada é RECUSADA — ensaio que fosse para a
     // OpenAI com a chave de um gateway privado diria que o produto não

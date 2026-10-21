@@ -73,7 +73,7 @@ novo quando quiser recomeçar o teste: a dívida volta a "aberta" do zero.
 ## 5. Conversar com ela pelo WhatsApp
 
 1. Abra o endereço que o `pnpm local:up` mostrou (normalmente http://localhost:3000) e entre com o usuário do passo 3.
-2. Em Provedores de IA, conecte o seu plano do ChatGPT pelo login (sem chave) ou cadastre uma chave de API da Anthropic. Para a Bella já nascer usando o plano do ChatGPT, rode o passo 4 com `--provedor openai-assinatura --modelo <modelo que a tela mostrar>`.
+2. Em Provedores de IA, conecte o seu plano do ChatGPT pelo login (sem chave) ou cadastre uma chave de API da Anthropic. Para a Bella já nascer usando o plano do ChatGPT, rode o passo 4 com `--provedor openai-assinatura --modelo <modelo que a tela mostrar>`. Também dá para usar o **ModelRouter**: cadastre a chave dele em Provedores de IA e rode com `--provedor modelrouter --modelo <id do modelo como o painel do ModelRouter mostra>`. Use só com dados fictícios até ler os termos de privacidade deles.
 3. Em Conexões, conecte um número de TESTE pelo QR code (não use o número de produção).
 4. Em Agentes, abra a Bella, publique e ligue ao número de teste.
 5. Do seu WhatsApp (o do `--telefone`), mande "oi" para o número de teste e negocie.

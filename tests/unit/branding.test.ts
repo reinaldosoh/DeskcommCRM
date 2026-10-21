@@ -902,6 +902,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da Requesty (roteador OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface.",
   },
+  "modelrouter.id": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint do ModelRouter (gateway OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito, e o mesmo host é o painel onde o usuário gera a PRÓPRIA chave (`ondePegarAChave`). O código FALA com ele: é o destino do request, não texto de interface.",
+  },
   "generativelanguage.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:

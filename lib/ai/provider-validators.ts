@@ -8,6 +8,7 @@
  *
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
+import { MODELROUTER_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
 import { baseDaApiDoJev } from "@/lib/ai/decisao/cliente";
 import { PROVEDOR_POR_ASSINATURA, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
 import { motivoDaRecusaDeDestino } from "@/lib/automation/destinos-internos-autorizados";
@@ -280,6 +281,30 @@ export async function validateRequestyKey(apiKey: string): Promise<ValidationRes
 }
 
 /**
+ * O ModelRouter é OpenAI-compatível: a chave se prova pelo `GET /v1/models`
+ * autenticado, que não gasta token. 401/403 é chave recusada.
+ */
+export async function validateModelRouterKey(apiKey: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch(`${MODELROUTER_ENDPOINT}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const json = (await res.json()) as { data?: { id?: string }[] };
+    const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
+/**
  * O Jev (TypeSafe AI) prova a chave pelo `GET /v1/models`, que EXIGE a
  * credencial (medido: 401 com chave falsa, 403 sem chave, 200 com a real) e não
  * gasta token. O formato do catálogo é `{ models: [{ name }] }`, diferente do
@@ -390,6 +415,8 @@ export function validateProviderKey(
       return validateDeepSeekKey(apiKey);
     case "requesty":
       return validateRequestyKey(apiKey);
+    case "modelrouter":
+      return validateModelRouterKey(apiKey);
     case "custom":
       return validateCustomKey(apiKey, baseUrl);
     case "typesafe":

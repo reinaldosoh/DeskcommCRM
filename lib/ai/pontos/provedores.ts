@@ -144,6 +144,18 @@ export const PROVEDORES = [
     prefixoDaChave: "rqsty-…",
   },
   {
+    id: "modelrouter",
+    rotulo: "ModelRouter",
+    quandoUsar:
+      "Uma chave só para modelos de vários fabricantes (Claude, GPT, Gemini, DeepSeek) por um gateway compatível com a OpenAI. Digite o id do modelo como o painel do ModelRouter mostra.",
+    aceitaEndpointProprio: true,
+    // Sem catálogo sincronizado: o formato da listagem não foi medido, então o
+    // seletor do agente cai no campo livre (o id que o painel deles mostra).
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://modelrouter.id/",
+    prefixoDaChave: "…",
+  },
+  {
     id: "custom",
     rotulo: "Provedor personalizado (compatível com OpenAI)",
     quandoUsar:

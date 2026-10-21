@@ -23,6 +23,7 @@ import {
   cabecalhosDeAtribuicaoOpenRouter,
   DEEPSEEK_ENDPOINT,
   OPENROUTER_ENDPOINT,
+  MODELROUTER_ENDPOINT,
   REQUESTY_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 
@@ -107,6 +108,14 @@ export function montarRequisicaoDeProva(
       // modelo mais barato do catálogo da Requesty é justamente da OpenAI.
       return {
         url: `${baseUrl ?? REQUESTY_ENDPOINT}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: { model: modelo, max_tokens: 16, messages: msg },
+      };
+    case "modelrouter":
+      // OpenAI-compatível, gateway de vários fabricantes: `max_tokens: 16`
+      // pela mesma razão da Requesty (modelos da OpenAI recusam menos).
+      return {
+        url: `${baseUrl ?? MODELROUTER_ENDPOINT}/chat/completions`,
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 16, messages: msg },
       };
