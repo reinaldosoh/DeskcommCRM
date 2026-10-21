@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/table";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { tagDeIdioma } from "@/lib/i18n/datas";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -92,12 +94,12 @@ function reais(cents: number): string {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace(/ /g, " ");
 }
 
-function data(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+function data(iso: string, tag: string): string {
+  return new Date(iso).toLocaleDateString(tag, { timeZone: "America/Sao_Paulo" });
 }
 
-function dataHora(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", {
+function dataHora(iso: string, tag: string): string {
+  return new Date(iso).toLocaleString(tag, {
     timeZone: "America/Sao_Paulo",
     day: "2-digit",
     month: "2-digit",
@@ -115,6 +117,8 @@ export default async function Page() {
   const user = await requireAuth();
   const org = await resolveActiveOrg(user);
   if (!org) redirect("/app");
+  const t = (texto: string) => traduzir(texto, user.idioma);
+  const tag = tagDeIdioma(user.idioma);
 
   const supabase = await createClient();
   const [carteirasR, dividasR, acordosR, tabulacoesR] = await Promise.all([
@@ -163,7 +167,7 @@ export default async function Page() {
   }
   const quem = (id: string | null) => {
     const c = id ? contatos.get(id) : undefined;
-    return nomeDoContato(c) ?? c?.phone_number ?? "Devedor";
+    return nomeDoContato(c) ?? c?.phone_number ?? t("Devedor");
   };
   const credorDe = new Map(carteiras.map((c) => [c.id, c.credor_nome]));
 
@@ -174,57 +178,57 @@ export default async function Page() {
   const conversas = tabulacoes.length;
   const taxaDeAcordo =
     conversas > 0
-      ? Math.round((tabulacoes.filter((t) => t.desfecho === "acordo_realizado").length / conversas) * 100)
+      ? Math.round((tabulacoes.filter((tb) => tb.desfecho === "acordo_realizado").length / conversas) * 100)
       : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold">Cobrança</h1>
+        <h1 className="text-xl font-semibold">{t("Cobrança")}</h1>
         <p className="text-sm text-text-muted">
-          A carteira que a Bella negocia: o que está em aberto, o que virou acordo e como terminou cada conversa.
+          {t("A carteira que a Bella negocia: o que está em aberto, o que virou acordo e como terminou cada conversa.")}
         </p>
       </div>
 
       {falhou && (
         <p className="rounded-md border border-border bg-warning-bg p-3 text-sm text-warning-fg">
-          Parte dos dados de cobrança não pôde ser lida agora. Recarregue a página em instantes.
+          {t("Parte dos dados de cobrança não pôde ser lida agora. Recarregue a página em instantes.")}
         </p>
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi titulo="Em aberto" valor={reais(totalEmAberto)} detalhe={`${emAberto.length} dívida(s)`} />
-        <Kpi titulo="Acordado" valor={reais(totalAcordado)} detalhe={`${acordosValidos.length} acordo(s)`} />
-        <Kpi titulo="Conversas" valor={String(conversas)} detalhe="com resultado registrado" />
+        <Kpi titulo={t("Em aberto")} valor={reais(totalEmAberto)} detalhe={`${emAberto.length} ${t("dívida(s)")}`} />
+        <Kpi titulo={t("Acordado")} valor={reais(totalAcordado)} detalhe={`${acordosValidos.length} ${t("acordo(s)")}`} />
+        <Kpi titulo={t("Conversas")} valor={String(conversas)} detalhe={t("com resultado registrado")} />
         <Kpi
-          titulo="Taxa de acordo"
+          titulo={t("Taxa de acordo")}
           valor={taxaDeAcordo === null ? "—" : `${taxaDeAcordo}%`}
-          detalhe="das conversas com resultado"
+          detalhe={t("das conversas com resultado")}
         />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Devedores</CardTitle>
+          <CardTitle>{t("Devedores")}</CardTitle>
           <CardDescription>
             {carteiras.length === 0
-              ? "Nenhuma carteira cadastrada ainda."
-              : `Carteiras: ${carteiras.map((c) => `${c.nome} (${c.credor_nome})`).join(", ")}`}
+              ? t("Nenhuma carteira cadastrada ainda.")
+              : `${t("Carteiras")}: ${carteiras.map((c) => `${c.nome} (${c.credor_nome})`).join(", ")}`}
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {dividas.length === 0 ? (
-            <Vazio texto="Nenhuma dívida na carteira. Importe devedores ou rode a semente de teste." />
+            <Vazio texto={t("Nenhuma dívida na carteira. Importe devedores ou rode a semente de teste.")} />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Devedor</TableHead>
-                  <TableHead>Credor / produto</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                  <TableHead className="text-right">Atraso</TableHead>
-                  <TableHead>Situação</TableHead>
-                  <TableHead>Último resultado</TableHead>
+                  <TableHead>{t("Devedor")}</TableHead>
+                  <TableHead>{t("Credor / produto")}</TableHead>
+                  <TableHead className="text-right">{t("Valor")}</TableHead>
+                  <TableHead className="text-right">{t("Atraso")}</TableHead>
+                  <TableHead>{t("Situação")}</TableHead>
+                  <TableHead>{t("Último resultado")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -235,21 +239,21 @@ export default async function Page() {
                     <TableRow key={d.id}>
                       <TableCell className="font-medium">
                         {quem(d.contact_id)}
-                        {d.opt_out_em && <span className="ml-2 text-xs text-error-fg">não contatar</span>}
+                        {d.opt_out_em && <span className="ml-2 text-xs text-error-fg">{t("não contatar")}</span>}
                       </TableCell>
                       <TableCell>
                         {credorDe.get(d.carteira_id) ?? "—"}
                         <span className="block text-xs text-text-muted">{d.produto}</span>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{reais(d.valor_devido_cents)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{diasDeAtraso(d.vencimento_original)} dias</TableCell>
+                      <TableCell className="text-right tabular-nums">{diasDeAtraso(d.vencimento_original)} {t("dias")}</TableCell>
                       <TableCell>
-                        <Badge variant={st.tom}>{st.rotulo}</Badge>
+                        <Badge variant={st.tom}>{t(st.rotulo)}</Badge>
                       </TableCell>
                       <TableCell>
-                        {ult ? <Badge variant={ult.tom}>{ult.rotulo}</Badge> : <span className="text-text-muted">—</span>}
+                        {ult ? <Badge variant={ult.tom}>{t(ult.rotulo)}</Badge> : <span className="text-text-muted">—</span>}
                         {d.retornar_em && (
-                          <span className="block text-xs text-text-muted">retornar em {dataHora(d.retornar_em)}</span>
+                          <span className="block text-xs text-text-muted">{t("retornar em")} {dataHora(d.retornar_em, tag)}</span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -264,21 +268,21 @@ export default async function Page() {
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Acordos</CardTitle>
-            <CardDescription>Fechados pela Bella ou pela equipe, com o PIX ou boleto enviado.</CardDescription>
+            <CardTitle>{t("Acordos")}</CardTitle>
+            <CardDescription>{t("Fechados pela Bella ou pela equipe, com o PIX ou boleto enviado.")}</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             {acordos.length === 0 ? (
-              <Vazio texto="Nenhum acordo fechado ainda." />
+              <Vazio texto={t("Nenhum acordo fechado ainda.")} />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Devedor</TableHead>
-                    <TableHead>Condição</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead>Situação</TableHead>
-                    <TableHead>Quando</TableHead>
+                    <TableHead>{t("Devedor")}</TableHead>
+                    <TableHead>{t("Condição")}</TableHead>
+                    <TableHead className="text-right">{t("Total")}</TableHead>
+                    <TableHead>{t("Situação")}</TableHead>
+                    <TableHead>{t("Quando")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -286,22 +290,22 @@ export default async function Page() {
                     const st = STATUS_ACORDO[a.status] ?? { rotulo: a.status, tom: "neutral" as const };
                     const condicao =
                       a.forma === "a_vista"
-                        ? `À vista no ${a.meio_pagamento === "pix" ? "PIX" : "boleto"}`
-                        : `Entrada ${reais(a.entrada_cents)} + ${a.parcelas - 1}x ${reais(a.parcela_cents)}`;
+                        ? `${t("À vista no")} ${a.meio_pagamento === "pix" ? "PIX" : t("boleto")}`
+                        : `${t("Entrada")} ${reais(a.entrada_cents)} + ${a.parcelas - 1}x ${reais(a.parcela_cents)}`;
                     return (
                       <TableRow key={a.id}>
                         <TableCell className="font-medium">{quem(a.contact_id)}</TableCell>
                         <TableCell>
                           {condicao}
                           {Number(a.desconto_pct) > 0 && (
-                            <span className="block text-xs text-text-muted">{Number(a.desconto_pct)}% de desconto</span>
+                            <span className="block text-xs text-text-muted">{Number(a.desconto_pct)}% {t("de desconto")}</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{reais(a.total_cents)}</TableCell>
                         <TableCell>
-                          <Badge variant={st.tom}>{st.rotulo}</Badge>
+                          <Badge variant={st.tom}>{t(st.rotulo)}</Badge>
                         </TableCell>
-                        <TableCell>{data(a.created_at)}</TableCell>
+                        <TableCell>{data(a.created_at, tag)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -313,33 +317,33 @@ export default async function Page() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Resultado das conversas</CardTitle>
-            <CardDescription>A tabulação que a Bella registra ao fim de cada negociação.</CardDescription>
+            <CardTitle>{t("Resultado das conversas")}</CardTitle>
+            <CardDescription>{t("A tabulação que a Bella registra ao fim de cada negociação.")}</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             {tabulacoes.length === 0 ? (
-              <Vazio texto="Nenhuma conversa terminada ainda." />
+              <Vazio texto={t("Nenhuma conversa terminada ainda.")} />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Devedor</TableHead>
-                    <TableHead>Resultado</TableHead>
-                    <TableHead>Motivo</TableHead>
-                    <TableHead>Quando</TableHead>
+                    <TableHead>{t("Devedor")}</TableHead>
+                    <TableHead>{t("Resultado")}</TableHead>
+                    <TableHead>{t("Motivo")}</TableHead>
+                    <TableHead>{t("Quando")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {tabulacoes.map((t) => {
-                    const d = DESFECHO[t.desfecho] ?? { rotulo: t.desfecho, tom: "neutral" as const };
+                  {tabulacoes.map((tb) => {
+                    const d = DESFECHO[tb.desfecho] ?? { rotulo: tb.desfecho, tom: "neutral" as const };
                     return (
-                      <TableRow key={t.id}>
-                        <TableCell className="font-medium">{quem(t.contact_id)}</TableCell>
+                      <TableRow key={tb.id}>
+                        <TableCell className="font-medium">{quem(tb.contact_id)}</TableCell>
                         <TableCell>
-                          <Badge variant={d.tom}>{d.rotulo}</Badge>
+                          <Badge variant={d.tom}>{t(d.rotulo)}</Badge>
                         </TableCell>
-                        <TableCell className="text-text-muted">{t.motivo ?? "—"}</TableCell>
-                        <TableCell>{dataHora(t.created_at)}</TableCell>
+                        <TableCell className="text-text-muted">{tb.motivo ?? "—"}</TableCell>
+                        <TableCell>{dataHora(tb.created_at, tag)}</TableCell>
                       </TableRow>
                     );
                   })}

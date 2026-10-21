@@ -192,7 +192,8 @@ export const NAV_CATALOG = [
     description: "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.",
     icon: "ClockCountdown",
     group: "atendimento",
-    sidebar: true,
+    // Pacare: saiu do menu lateral para dar a vaga à Cobrança (o teto da dobra
+    // é 15 itens a 1280x900). Segue no ⌘K e no endereço.
   },
   {
     // Entra em "atendimento", e não em "organizacao", porque a Agenda é onde o
