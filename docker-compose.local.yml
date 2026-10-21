@@ -90,7 +90,10 @@ services:
         condition: service_healthy
 
   waha:
-    image: devlikeapro/waha:latest-2026.7.2
+    # x86 usa `latest-2026.7.2`; em ARM64 (Mac M1/M2/M3) o local-stack.sh
+    # exporta WAHA_IMAGE=devlikeapro/waha:noweb-arm-2026.7.2 — a tag x86 não
+    # tem manifesto arm64 e o `up` falhava com "no matching manifest".
+    image: ${WAHA_IMAGE:-devlikeapro/waha:latest-2026.7.2}
     restart: unless-stopped
     ports:
       # 127.0.0.1 e não 0.0.0.0: o dashboard do WAHA está ligado logo abaixo e

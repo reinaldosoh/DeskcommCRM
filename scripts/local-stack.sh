@@ -7,6 +7,14 @@ cd "$ROOT_DIR"
 ENV_FILE="${LOCAL_ENV_FILE:-.env.local}"
 COMPOSE=(docker compose -f docker-compose.local.yml --env-file "$ENV_FILE")
 
+# A tag x86 do WAHA não tem manifesto arm64: no Mac com chip Apple, usa a tag
+# ARM da MESMA versão NOWEB (a que o docker-compose.prod.yml documenta).
+if [[ -z "${WAHA_IMAGE:-}" ]]; then
+  case "$(uname -m)" in
+    arm64|aarch64) export WAHA_IMAGE="devlikeapro/waha:noweb-arm-2026.7.2" ;;
+  esac
+fi
+
 usage() {
   printf 'Uso: %s {up|down|restart|status|logs|supabase-status|reset}\n' "$0"
 }
