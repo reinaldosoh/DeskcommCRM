@@ -46,6 +46,8 @@ export type DonoDoCampo =
   | "alvo_de_tag"
   /** `lead_id`: quem guarda é `negocioDaEscritaDoTurno`, em `tools.ts`. */
   | "negocio"
+  /** `recuperacao_dividas.contact_id` (cobrança da Bella). */
+  | "divida"
   /** Não é registro de cliente: funil, etapa, usuário, fluxo. */
   | "configuracao";
 
@@ -95,6 +97,13 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_schedule_followup: { lead_id: "negocio", contact_id: "contato" },
   crm_cancel_followup: { followup_id: "retorno" },
   crm_enroll_followup_flow: { contact_id: "contato", flow_id: "configuracao" },
+
+  // ---- cobrança (Bella) ----
+  // O serviço também recusa dívida de outro contato; a ponte confere antes, como
+  // em toda escrita do turno.
+  cobranca_verificar_identidade: {},
+  cobranca_fechar_acordo: { divida_id: "divida" },
+  cobranca_tabular: { divida_id: "divida" },
 
   // ---- sem registro de cliente ----
   crm_save_org_memory: {},
@@ -151,6 +160,8 @@ async function campoEhDoContato(
       return existeDoContato(supabase, "conversations", organizationId, contato, id);
     case "compromisso":
       return existeDoContato(supabase, "calendar_appointments", organizationId, contato, id);
+    case "divida":
+      return existeDoContato(supabase, "recuperacao_dividas", organizationId, contato, id);
     case "retorno":
       return existeDoContato(supabase, "cron_jobs", organizationId, contato, id, {
         kind: "at",

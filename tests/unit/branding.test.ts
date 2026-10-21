@@ -1048,6 +1048,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "site oficial da Comissão Nacional de Proteção de Dados, a autoridade de controlo portuguesa (`autoridadeDeSupervisao` do perfil PT em lib/legal/perfil-do-pais.ts). Sai impresso no relatório de acesso do titular, alínea f) do art. 15.º, n.º 1 (#2354). O código nunca chama o host — quem o visita é o titular que vai reclamar —, e trocá-lo pelo domínio do revendedor mandaria a reclamação para quem é reclamado.",
   },
+  "br.gov": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "prefixo do GUI `br.gov.bcb.pix` do BR Code do PIX (padrão EMV do Banco Central), em lib/recuperacao/pagamento/br-code.ts. Não é host que o código chama: é o identificador que todo app de banco exige dentro do copia-e-cola — trocar quebra o pagamento.",
+  },
   "deskcomm.app": {
     categoria: "PROTOCOLO",
     motivo:
@@ -1206,6 +1211,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // FALAR com ele (a listagem de modelos da assinatura chama o backend do
       // Codex), e quem fala com o host é FORNECEDOR — a categoria fechada
       // perde o host no mesmo diff em que a lista de call sites o ganha.
+      // Decisão escrita: GUI do PIX (`br.gov.bcb.pix`) dentro do BR Code — é o
+      // padrão do Banco Central, não host; sem ele nenhum banco lê o copia-e-cola.
+      "br.gov",
       "console.anthropic.com",
       // Decisão escrita: é o painel de chaves do Jev, o mesmo caso dos outros
       // CONSOLE — o link "Onde pegar a chave" da tela de Credenciais.

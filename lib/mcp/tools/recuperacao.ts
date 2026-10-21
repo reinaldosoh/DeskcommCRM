@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { provedorDePagamento } from "@/lib/recuperacao/pagamento/fake";
 import { repositorioSupabase } from "@/lib/recuperacao/repositorio";
 import {
@@ -162,7 +163,7 @@ export const cobrancaFecharAcordo: McpToolDefinition<typeof fecharShape> = {
       .eq("organization_id", ctx.organizationId)
       .eq("id", c.contatoId)
       .maybeSingle();
-    const nome = (contato?.display_name || contato?.name || "Cliente") as string;
+    const nome = nomeDoContato(contato) ?? "Cliente";
     return fecharAcordo(c, input.divida_id, pedidoDe(input), input.meio ?? "pix", nome);
   },
 };

@@ -117,6 +117,10 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // Consulta E marca numa chamada só (issue #831): o `contact_id` é OBRIGATÓRIO
   // como no marcar puro (DECISÃO 27), então o alvo resolve de verdade.
   crm_find_and_book_appointment: "funil_vem_do_contato",
+  // Cobrança (Bella): escreve em recuperacao_*, nunca em crm_leads.
+  cobranca_verificar_identidade: "sem_funil",
+  cobranca_fechar_acordo: "sem_funil",
+  cobranca_tabular: "sem_funil",
   crm_reschedule_appointment: "sem_funil",
   crm_cancel_appointment: "sem_funil",
   // Mesmo argumento das duas acima, e pela mesma razão: operam por
