@@ -78,6 +78,9 @@ import type { ChannelProvider } from '@/lib/channels/capabilities';
 import { aplicarAjustesDeEstilo, lerAjustesDeEstiloDaOrg } from './ajustes-de-estilo-da-org';
 import type { AjusteDeEstilo, LeituraDosAjustes } from './ajustes-de-estilo-da-org';
 import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
+import { avaliarEnvioDeCobranca, type EstadoDaCobrancaNoEnvio } from '@/lib/recuperacao/guardrail';
+import { diasDeAtraso, faixaVigente } from '@/lib/recuperacao/politica';
+import { hojeLocal, lerPolitica } from '@/lib/recuperacao/servico';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
 export interface GateContext {
@@ -302,6 +305,12 @@ export interface GateContext {
    * não põe ninguém da empresa para trabalhar.
    */
   followup?: { disponivel: boolean; agendadoNesteTurno: boolean };
+  /**
+   * Estado de COBRANÇA do contato (agente Bella, `lib/recuperacao`). Ausente ou
+   * `null` = o contato não tem dívida em carteira, e o `cobrancaGate` não arma —
+   * nenhum outro agente muda de comportamento.
+   */
+  cobranca?: EstadoDaCobrancaNoEnvio | null;
 }
 
 /**
@@ -353,6 +362,21 @@ const stopGate: Gate = {
             'possível enviar nada a ele; encerre o turno sem tentar de novo.',
         }
       : { pass: true },
+};
+
+/**
+ * Gate de COBRANÇA — opt-out e horário de mensagem ativa, CDC art. 42 (sem
+ * ameaça nem constrangimento), nenhum valor antes da identidade e teto da
+ * política do credor. Regras em `lib/recuperacao/guardrail.ts`. Só arma para
+ * contato com dívida em carteira (`ctx.cobranca`); o resto passa direto.
+ */
+export const cobrancaGate: Gate = {
+  name: 'cobranca',
+  evaluate: (ctx) => {
+    if (!ctx.cobranca) return { pass: true };
+    const veto = avaliarEnvioDeCobranca(ctx.body, ctx.cobranca, ctx.now);
+    return veto ? { pass: false, code: veto.code, reason: veto.reason } : { pass: true };
+  },
 };
 
 /**
@@ -907,8 +931,12 @@ const spinningGate: Gate = {
  * assistente. Nasce DESARMADO (ver `GateContext.clinicalClaimEnforced`): só arma no turno
  * do agente de uma organização que ligou a camada `afirmacao_clinica`, então a v8 não
  * muda o destino de nenhum envio de quem não ligou.
+ * v10 = insere `cobrancaGate` logo depois do `lgpd` — a cobrança da Bella (Pacare):
+ * opt-out e horário de mensagem ativa, CDC art. 42, nenhum valor antes da identidade e
+ * teto da política. Só arma para contato com dívida em carteira (`GateContext.cobranca`),
+ * então não muda o destino de nenhum envio fora da cobrança.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 9;
+export const BEFORE_SEND_CHAIN_VERSION = 10;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -966,6 +994,7 @@ export const factualClaimGate: Gate = {
 export const BEFORE_SEND_GATES: readonly Gate[] = [
   stopGate,
   lgpdGate,
+  cobrancaGate,
   pacingGate,
   messagingWindowGate,
   spinningGate,
@@ -1388,6 +1417,8 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       args.channelSessionId,
     );
 
+    const cobranca = await lerEstadoDaCobranca(client, args.tenantId, args.leadId, args.resposta, args.now);
+
     const ctx: GateContext = {
       now: args.now,
       body: bodyDoModelo,
@@ -1426,6 +1457,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
+      cobranca,
     };
 
     const { body: evaluatedBody, trace: traceDaCadeia, veto, throttleWaitMs } = evaluateBeforeSend(ctx, gates);
@@ -1590,6 +1622,77 @@ async function readLastInboundAt(
     [organizationId, contactId, channelSessionId],
   );
   return rows[0]?.last_inbound_at ?? null;
+}
+
+/**
+ * Estado de cobrança do contato para o `cobrancaGate`. `null` quando o contato
+ * não tem dívida aberta (ou a instalação ainda não tem as tabelas — conferido
+ * com `to_regclass` ANTES, porque um erro de relação inexistente abortaria a
+ * transação serializada desta tentativa).
+ */
+async function lerEstadoDaCobranca(
+  db: Queryable,
+  organizationId: string,
+  contactId: string,
+  resposta: boolean | undefined,
+  now: Date,
+): Promise<EstadoDaCobrancaNoEnvio | null> {
+  const existe = await db.query<{ ok: boolean }>(
+    `select to_regclass('public.recuperacao_dividas') is not null as ok`,
+  );
+  if (!existe.rows[0]?.ok) return null;
+  const { rows } = await db.query<{
+    vencimento_original: string;
+    valor_devido_cents: string;
+    identidade_verificada_em: Date | null;
+    opt_out_em: Date | null;
+    politica: unknown;
+    contato_hora_inicio: number;
+    contato_hora_fim: number;
+    contato_dias: number[];
+  }>(
+    `select to_char(d.vencimento_original, 'YYYY-MM-DD') as vencimento_original, d.valor_devido_cents,
+            d.identidade_verificada_em, d.opt_out_em,
+            c.politica, c.contato_hora_inicio, c.contato_hora_fim, c.contato_dias
+       from recuperacao_dividas d
+       join recuperacao_carteiras c on c.id = d.carteira_id and c.organization_id = d.organization_id
+      where d.organization_id = $1 and d.contact_id = $2 and d.status in ('aberta', 'em_acordo')`,
+    [organizationId, contactId],
+  );
+  if (rows.length === 0) return null;
+
+  const hoje = hojeLocal(now);
+  let descontoMaximoPct = 0;
+  let maxParcelas = 1;
+  for (const r of rows) {
+    // Política ilegível não derruba o envio: cai no padrão, que é conservador.
+    let politica;
+    try {
+      politica = lerPolitica(r.politica);
+    } catch {
+      politica = lerPolitica({});
+    }
+    const dias = diasDeAtraso(
+      { id: '', credor: '', produto: '', saldoCents: Number(r.valor_devido_cents), vencimentoOriginal: r.vencimento_original },
+      hoje,
+    );
+    descontoMaximoPct = Math.max(descontoMaximoPct, faixaVigente(politica, dias).descontoMaximoPct);
+    maxParcelas = Math.max(maxParcelas, politica.maxParcelas);
+  }
+  const janela = rows[0]!;
+  return {
+    identidadeConfirmada: rows.some((r) => r.identidade_verificada_em !== null),
+    optOut: rows.some((r) => r.opt_out_em !== null),
+    ...(resposta !== undefined ? { resposta } : {}),
+    janela: {
+      horaInicio: janela.contato_hora_inicio,
+      horaFim: janela.contato_hora_fim,
+      dias: janela.contato_dias,
+      fuso: 'America/Sao_Paulo',
+    },
+    descontoMaximoPct,
+    maxParcelas,
+  };
 }
 
 /** Trace estruturado: uma linha por gate avaliado (ids não são PII; corpo nunca é logado). */

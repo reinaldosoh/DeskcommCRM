@@ -101,6 +101,17 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
+    nome: "cobranca",
+    rotulo: "Cobrar dentro da lei",
+    oQueProtege:
+      "Na cobrança: nada de ameaça ou constrangimento, nenhum valor antes de confirmar a identidade, " +
+      "nenhuma oferta acima do que o credor autorizou e nenhuma mensagem fora do horário ou para quem pediu para parar.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "É o Código de Defesa do Consumidor (art. 42) e a LGPD. Só vale para contato com dívida em carteira; nos demais, não faz nada.",
+    camada: null,
+  },
+  {
     nome: "pacing",
     rotulo: "Segurar o ritmo de envio",
     oQueProtege:
