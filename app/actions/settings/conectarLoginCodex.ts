@@ -9,12 +9,14 @@ import { desconectarLoginCodex, guardarLoginCodex, lerLoginCodex } from "@/lib/a
 import { lerOuCriarHostIdSiwc } from "@/lib/ai/credenciais/host-siwc";
 import {
   CLIENTE_DINAMICO_SIWC,
+  ErroDeToken,
   ENDPOINT_DE_JWKS,
   lerRetornoColado,
   trocarCodigoPorTokens,
 } from "@/lib/ai/pontos/pkce-da-assinatura";
 import { verificarEstado } from "@/lib/agenda/google/estado";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { env } from "@/lib/env";
@@ -107,7 +109,7 @@ export async function conectarLoginCodex(
     user_id: authUser.id,
     expira_em: new Date(estado.expiraEmMs).toISOString(),
   });
-  if (erroDoNonce) return { ok: false, error: erroDoNonce.code === "23505" ? "estado_invalido" : "banco" };
+  if (erroDoNonce) return { ok: false, error: erroDoNonce.code === "23505" ? "retorno_ja_usado" : "banco" };
 
   let tokens: Awaited<ReturnType<typeof trocarCodigoPorTokens>>;
   try {
@@ -116,9 +118,16 @@ export async function conectarLoginCodex(
       codeVerifier: parsed.data.codeVerifier,
       clientId,
     });
-  } catch {
+  } catch (erro) {
     // Sem detalhe na resposta: o corpo do provedor pode carregar material da
-    // credencial, e a tela só precisa saber que a troca não deu.
+    // credencial, e a tela só precisa saber que a troca não deu. O log leva só
+    // o motivo e o status — sem ele, a falha do primeiro clique sumia e o
+    // operador só via a recusa do nonce já queimado nos cliques seguintes.
+    logger.warn("login_codex.troca_recusada", {
+      organizationId: activeOrg.orgId,
+      motivo: erro instanceof ErroDeToken ? erro.motivo : "erro_inesperado",
+      status: erro instanceof ErroDeToken ? erro.status : null,
+    });
     return { ok: false, error: "troca_recusada" };
   }
 

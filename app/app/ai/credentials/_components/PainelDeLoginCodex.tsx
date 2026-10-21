@@ -85,6 +85,8 @@ export function PainelDeLoginCodex({
     somente_leitura: "Acompanhamento somente leitura ou encerrado.",
     retorno_sem_estado:
       "Cole o endereço inteiro da barra do navegador (começa com http://127.0.0.1:1455/auth/callback), não só o código.",
+    retorno_ja_usado:
+      "Este endereço já foi usado numa tentativa anterior e não vale mais. Recarregue a página, abra o link novo, faça o login e cole o endereço novo.",
     estado_invalido:
       "Este endereço não veio do link desta tela, aberto por você nesta empresa — ou o link venceu (vale 10 minutos e uma vez só). Recarregue a página, abra o link de novo e cole o endereço novo.",
   };

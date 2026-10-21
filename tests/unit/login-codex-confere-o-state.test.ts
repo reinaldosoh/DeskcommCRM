@@ -302,7 +302,7 @@ describe("conectarLoginCodex queima o nonce do state antes da troca", () => {
     expect(trocar).toHaveBeenCalledTimes(1);
 
     const segunda = await conectarLoginCodex({ codigo: colado, codeVerifier: VERIFIER });
-    expect(segunda).toEqual({ ok: false, error: "estado_invalido" });
+    expect(segunda).toEqual({ ok: false, error: "retorno_ja_usado" });
     expect(trocar).toHaveBeenCalledTimes(1);
     expect(guardar).toHaveBeenCalledTimes(1);
   });
@@ -311,7 +311,7 @@ describe("conectarLoginCodex queima o nonce do state antes da troca", () => {
     trocar.mockRejectedValueOnce(new Error("invalid_grant"));
     const colado = retorno("code-bom", estadoPara(ORG, PESSOA));
     expect(await conectarLoginCodex({ codigo: colado, codeVerifier: VERIFIER })).toEqual({ ok: false, error: "troca_recusada" });
-    expect(await conectarLoginCodex({ codigo: colado, codeVerifier: VERIFIER })).toEqual({ ok: false, error: "estado_invalido" });
+    expect(await conectarLoginCodex({ codigo: colado, codeVerifier: VERIFIER })).toEqual({ ok: false, error: "retorno_ja_usado" });
     expect(trocar).toHaveBeenCalledTimes(1);
   });
 
