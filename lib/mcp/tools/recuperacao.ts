@@ -57,7 +57,7 @@ const pedidoShape = {
   desconto_pct: z.number().min(0).max(100).optional().describe("À vista: desconto da oferta escolhida."),
 };
 
-function pedidoDe(input: {
+export function pedidoDe(input: {
   forma: "a_vista" | "parcelado";
   parcelas?: number;
   entrada_reais?: number;
