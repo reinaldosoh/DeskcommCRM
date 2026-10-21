@@ -4,6 +4,10 @@
  * 10/03/2026) e a Bella como RASCUNHO de agente.
  *
  *   pnpm bella:semear --telefone +5522999999999 [--cpf3 123] [--org <uuid>]
+ *                     [--provedor openai-assinatura --modelo <id>]
+ *
+ * `--provedor openai-assinatura` usa o plano do ChatGPT conectado em Provedores
+ * de IA (login, sem chave). O padrão é `anthropic`, com chave de API.
  *
  * `--telefone` é o número de WhatsApp que vai fazer o papel do devedor (o seu,
  * para conversar com ela). `--cpf3` são os 3 primeiros dígitos que a Bella vai
@@ -111,7 +115,7 @@ async function main() {
     );
     let agenteId = agente.rows[0]?.id;
     if (!agenteId) {
-      const criado = await createMcpAgentDraft(client as unknown as pg.PoolClient, { orgId: org.id, userId }, rascunhoDaBella());
+      const criado = await createMcpAgentDraft(client as unknown as pg.PoolClient, { orgId: org.id, userId }, rascunhoDaBella({ provider: arg("provedor"), model: arg("modelo") }));
       agenteId = criado.agent.id as string;
     }
 
