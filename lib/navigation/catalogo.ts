@@ -177,6 +177,16 @@ export const NAV_CATALOG = [
     contador: "fila",
   },
   {
+    // Pacare: o painel da recuperação de crédito. No topo do Atendimento porque
+    // é a primeira tela que o gestor da carteira abre de manhã.
+    href: "/app/cobranca",
+    label: "Cobrança",
+    description: "A carteira que a Bella negocia: em aberto, acordos fechados e o resultado de cada conversa.",
+    icon: "Receipt",
+    group: "atendimento",
+    sidebar: true,
+  },
+  {
     href: "/app/radar",
     label: "Radar",
     description: "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.",
