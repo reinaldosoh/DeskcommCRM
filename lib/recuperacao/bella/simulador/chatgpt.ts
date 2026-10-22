@@ -75,7 +75,8 @@ export function estadoDoLogin() {
     conectado: !!t,
     email: t?.email ?? (payloadDo(t?.id_token).email as string | undefined) ?? null,
     aguardando: !!pendente && pendente.expira > Date.now(),
-    erro: ultimoErro,
+    // Um retorno repetido (dois cliques em Entrar) falha DEPOIS do login bom: conectado, o erro velho não importa.
+    erro: t ? null : ultimoErro,
   };
 }
 
