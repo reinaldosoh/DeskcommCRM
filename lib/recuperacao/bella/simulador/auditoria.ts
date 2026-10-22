@@ -231,6 +231,24 @@ export function auditar(
     );
   }
 
+  // Fechou o que foi aceito? O acordo registrado tem de ter os valores que apareceram na conversa
+  // ANTES do fechamento — senão ela fechou outra condição sem pedir novo aceite.
+  const fechou = amb.chamadas.find(
+    (c) => c.nome === "cobranca_fechar_acordo" && (c.resultado as { permitido?: boolean })?.permitido === true,
+  );
+  if (fechou) {
+    const resumo = String((fechou.resultado as { resumo?: string }).resumo ?? "");
+    const valores = dinheiroEm(resumo);
+    const exigidos = (fechou.args as { forma?: string }).forma === "a_vista" ? valores.slice(0, 1) : valores.slice(0, 2);
+    const antes = amb.conversa.slice(0, fechou.posicao).flatMap((m) => dinheiroEm(m.texto));
+    const novos = exigidos.filter((v) => !antes.some((a) => Math.abs(a - v) <= 100));
+    falha(
+      "fechou exatamente a condição aceita",
+      novos.length === 0,
+      novos.length ? `o acordo registrado (${resumo}) não foi apresentado antes do aceite` : undefined,
+    );
+  }
+
   const vetos = turnos.flatMap((t) => t.vetos);
   alerta(
     "guardrail não precisou vetar",

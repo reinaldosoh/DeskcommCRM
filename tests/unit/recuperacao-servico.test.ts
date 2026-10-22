@@ -143,6 +143,15 @@ describe("depois da identidade", () => {
     expect(estado.acordos).toHaveLength(0);
   });
 
+  it("total diferente do aceito não fecha: devolve a condição para novo aceite", async () => {
+    const r = await fecharAcordo(ctx, DIVIDA, { forma: "a_vista" }, "pix", "João", 1);
+    expect(r).toMatchObject({ permitido: false, motivo: "difere_do_aceito" });
+    expect((r as { proposta?: { texto?: string } }).proposta?.texto).toContain("à vista");
+    expect(estado.acordos).toHaveLength(0);
+    const total = (r as { proposta: { totalCents: number } }).proposta.totalCents;
+    expect(await fecharAcordo(ctx, DIVIDA, { forma: "a_vista" }, "pix", "João", total + 50)).toMatchObject({ permitido: true });
+  });
+
   it("boleto gera linha digitável de teste", async () => {
     const r = (await fecharAcordo(ctx, DIVIDA, { forma: "a_vista", descontoPct: 5 }, "boleto", "João")) as {
       pagamento?: { boleto_linha_digitavel?: string };

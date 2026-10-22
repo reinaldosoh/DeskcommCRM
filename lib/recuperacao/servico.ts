@@ -275,6 +275,8 @@ export async function fecharAcordo(
   pedido: PedidoDoDevedor,
   meio: "pix" | "boleto",
   devedorNome: string,
+  /** O total que a pessoa aceitou na conversa: se a política recalcular outro, não fecha. */
+  totalAceitoCents?: number,
 ) {
   const r = await dividaDoContato(ctx, dividaId);
   if ("erro" in r) return r.erro;
@@ -295,6 +297,16 @@ export async function fecharAcordo(
     };
   }
   const p = a.proposta;
+  // Tolerância de R$ 1: arredondamento de quem digitou o valor, não condição diferente.
+  if (totalAceitoCents !== undefined && Math.abs(p.totalCents - totalAceitoCents) > 100) {
+    return {
+      permitido: false as const,
+      motivo: "difere_do_aceito" as const,
+      mensagem:
+        "este pedido dá um total diferente do que a pessoa aceitou — não feche: apresente a condição abaixo e peça um novo aceite",
+      proposta: { texto: descreverProposta(p), ...p },
+    };
+  }
   const { id: acordoId } = await ctx.repo.inserirAcordo({
     divida_id: dividaId,
     contact_id: ctx.contatoId,

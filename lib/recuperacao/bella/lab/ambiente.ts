@@ -116,6 +116,7 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbien
       desfecho: Desfecho;
       motivo?: string;
       retornar_em?: string;
+      total_aceito_reais?: number;
     };
     let resultado: unknown;
     switch (nome) {
@@ -129,7 +130,14 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbien
         resultado = await simularAcordo(ctx, a.divida_id, pedidoDe(a));
         break;
       case "cobranca_fechar_acordo":
-        resultado = await fecharAcordo(ctx, a.divida_id, pedidoDe(a), a.meio ?? "pix", divida.nome);
+        resultado = await fecharAcordo(
+          ctx,
+          a.divida_id,
+          pedidoDe(a),
+          a.meio ?? "pix",
+          divida.nome,
+          a.total_aceito_reais === undefined ? undefined : Math.round(a.total_aceito_reais * 100),
+        );
         break;
       case "cobranca_tabular":
         resultado = await tabular(ctx, {

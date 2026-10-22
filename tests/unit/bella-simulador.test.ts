@@ -76,6 +76,10 @@ const bellaFalsa = new MockLanguageModelV4({
     if (t.startsWith("[sistema] mensagem NÃO enviada")) return texto("Desculpe! Posso te ajudar com a negociação?");
     if (/inventa/.test(t)) return texto("Consigo fazer por R$ 12,34 à vista, só hoje.");
     if (/exagera/.test(t)) return texto("Faço com 80% de desconto!");
+    if (/fecha errado/.test(t)) {
+      const d = (resultado("cobranca_consultar_divida")?.dividas as unknown as Array<{ divida_id: string }>)[0]!;
+      return chamar("cobranca_fechar_acordo", { divida_id: d.divida_id, forma: "a_vista", desconto_pct: 0, meio: "pix" });
+    }
     if (/fechado|aceito/.test(t)) {
       const d = (resultado("cobranca_consultar_divida")?.dividas as unknown as Array<{ divida_id: string; ofertas: Array<{ descontoPct: number }> }>)[0]!;
       return chamar("cobranca_fechar_acordo", { divida_id: d.divida_id, forma: "a_vista", desconto_pct: d.ofertas[0]!.descontoPct, meio: "pix" });
@@ -119,6 +123,27 @@ describe("simulador da Bella", () => {
     expect(r.status).toBe("aprovada");
     expect(r.juiz?.nota).toBe(9);
     expect(r.conversa.some((m) => m.autor === "bella" && m.texto.includes("PIX DE TESTE"))).toBe(true);
+  });
+
+  it("reprova quando fecha uma condição diferente da que foi apresentada", async () => {
+    registrarModeloDeTeste("p-errado", personaFalsa(["123", "fecha errado", "valeu"]));
+    const cen = cenarioPorId("colaborativo_a_vista")!;
+    const r = await rodarConversa(vazio(1, cen, DIVIDA_PADRAO), cen, {
+      modeloBella: "teste:bella",
+      modeloPersona: "teste:p-errado",
+      modeloJuiz: null,
+      maxTurnos: 6,
+    });
+    const achado = r.achados.find((a) => a.nome === "fechou exatamente a condição aceita");
+    expect(achado?.ok).toBe(false);
+    expect(r.status).toBe("reprovada");
+    const certo = (await rodarConversa(vazio(2, cen, DIVIDA_PADRAO), cen, {
+      modeloBella: "teste:bella",
+      modeloPersona: (registrarModeloDeTeste("p-certo", personaFalsa(["123", "fechado", "valeu"])), "teste:p-certo"),
+      modeloJuiz: null,
+      maxTurnos: 6,
+    })).achados.find((a) => a.nome === "fechou exatamente a condição aceita");
+    expect(certo?.ok).toBe(true);
   });
 
   it("pega número inventado que passa pelo guardrail", async () => {

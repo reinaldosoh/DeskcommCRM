@@ -140,13 +140,18 @@ export const cobrancaSimularAcordo: McpToolDefinition<typeof pedidoShape> = {
 const fecharShape = {
   ...pedidoShape,
   meio: z.enum(["pix", "boleto"]).default("pix").describe("Como a pessoa quer pagar."),
+  total_aceito_reais: reais
+    .optional()
+    .describe("SEMPRE passe: o total (em reais) da oferta que a pessoa aceitou. Se a política der outro, nada é fechado."),
 };
 
 export const cobrancaFecharAcordo: McpToolDefinition<typeof fecharShape> = {
   name: "cobranca_fechar_acordo",
   description:
     "Registra o acordo que a pessoa ACEITOU com clareza (\"fechado\", \"pode ser\") e gera na hora o PIX ou " +
-    "boleto da entrada/à vista. O valor é recalculado pela política — passe o mesmo pedido da oferta aceita. " +
+    "boleto da entrada/à vista. O valor é recalculado pela política — passe o mesmo pedido da oferta aceita " +
+    "(à vista: o desconto_pct dela) e o total_aceito_reais. Se voltar difere_do_aceito, NÃO diga que fechou: " +
+    "apresente a condição devolvida e peça um novo aceite. " +
     "Depois, envie o código de pagamento imediatamente.",
   inputSchema: fecharShape,
   category: "write",
@@ -164,7 +169,7 @@ export const cobrancaFecharAcordo: McpToolDefinition<typeof fecharShape> = {
       .eq("id", c.contatoId)
       .maybeSingle();
     const nome = nomeDoContato(contato) ?? "Cliente";
-    return fecharAcordo(c, input.divida_id, pedidoDe(input), input.meio ?? "pix", nome);
+    return fecharAcordo(c, input.divida_id, pedidoDe(input), input.meio ?? "pix", nome, paraCents(input.total_aceito_reais));
   },
 };
 
