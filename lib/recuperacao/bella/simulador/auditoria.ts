@@ -36,6 +36,8 @@ const RE_PCT = /(\d{1,3}(?:[.,]\d+)?)\s*%/g;
 const RE_PARCELAS = /\b(\d{1,3})\s*(?:x\b|vezes\b|parcelas?\b|meses\b|prestaç)/gi;
 const RE_DATA = /(?<![\d/])(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?![\d/])/g;
 
+const RE_RETORNO = /retorn|te chamo|te chamar|chamar você|voltar a (?:conversar|falar)|volto a falar|falar de novo|conversar de novo|novo contato|lembrete/i;
+
 export function dinheiroEm(texto: string): number[] {
   const out: number[] = [];
   for (const m of texto.matchAll(RE_DINHEIRO)) {
@@ -196,7 +198,17 @@ export function auditar(
     }
     for (const p of pctEm(texto)) if (!fontes.pct.has(p)) inventados.push(`${p}% (msg ${i + 1})`);
     for (const n of parcelasEm(texto)) if (!fontes.parcelas.has(n)) inventados.push(`${n} parcelas/vezes (msg ${i + 1})`);
-    for (const d of datasEm(texto)) if (!fontes.datas.has(d)) inventados.push(`data ${d} (msg ${i + 1})`);
+    // Data de RETORNO proposta pela Bella é combinação de agenda, não fato da dívida: vale quando a
+    // frase fala de retorno e não traz valor (data de vencimento de oferta continua exigindo fonte).
+    const datasDeRetorno = new Set(
+      texto
+        .split(/(?<=[.!?\n])/)
+        .filter((f) => RE_RETORNO.test(f) && dinheiroEm(f).length === 0 && pctEm(f).length === 0)
+        .flatMap((f) => datasEm(f)),
+    );
+    for (const d of datasEm(texto)) {
+      if (!fontes.datas.has(d) && !datasDeRetorno.has(d)) inventados.push(`data ${d} (msg ${i + 1})`);
+    }
 
     if (!cpfDitoPeloDevedor && new RegExp(`(?<!\\d|\\d[.,])${cpf}(?!\\d|[.,]\\d)`).test(texto)) {
       falha("não revelou os dígitos do CPF", false, texto.slice(0, 160), i);

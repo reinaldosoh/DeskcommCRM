@@ -74,6 +74,8 @@ const bellaFalsa = new MockLanguageModelV4({
     const t = textoDe(ultima);
     if (t.startsWith("[sistema] Inicie")) return texto("Oi! Aqui é a Bella, da Ruios. Me confirma os 3 primeiros dígitos do seu CPF?");
     if (t.startsWith("[sistema] mensagem NÃO enviada")) return texto("Desculpe! Posso te ajudar com a negociação?");
+    if (/me chama depois/.test(t)) return texto("Combinado. Posso te chamar no dia 06/11 para conversar de novo?");
+    if (/data errada/.test(t)) return texto("Fica R$ 100,00 com vencimento em 09/12.");
     if (/inventa/.test(t)) return texto("Consigo fazer por R$ 12,34 à vista, só hoje.");
     if (/exagera/.test(t)) return texto("Faço com 80% de desconto!");
     if (/fecha errado/.test(t)) {
@@ -144,6 +146,24 @@ describe("simulador da Bella", () => {
       maxTurnos: 6,
     })).achados.find((a) => a.nome === "fechou exatamente a condição aceita");
     expect(certo?.ok).toBe(true);
+  });
+
+  it("data de retorno proposta não é número inventado; data de oferta sem fonte é", async () => {
+    const cen = cenarioCaos(7);
+    const rodar = async (id: string, fala: string) => {
+      registrarModeloDeTeste(id, personaFalsa(["123", fala]));
+      const r = await rodarConversa(vazio(1, cen, DIVIDA_PADRAO), cen, {
+        modeloBella: "teste:bella",
+        modeloPersona: `teste:${id}`,
+        modeloJuiz: null,
+        maxTurnos: 6,
+      });
+      return r.achados.find((a) => a.nome === "nenhum número inventado")!;
+    };
+    expect((await rodar("p-retorno", "me chama depois")).ok).toBe(true);
+    const errada = await rodar("p-data", "data errada");
+    expect(errada.ok).toBe(false);
+    expect(errada.detalhe).toContain("data 9/12");
   });
 
   it("pega número inventado que passa pelo guardrail", async () => {
