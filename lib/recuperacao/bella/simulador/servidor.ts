@@ -27,6 +27,7 @@ import {
   type PedidoDeLote,
   type ResultadoDaConversa,
 } from "./lote";
+import { colarRetorno, estadoDoLogin, iniciarLogin, modelosDaAssinatura, sair } from "./chatgpt";
 import { PROVEDORES, definirChave, provedoresDisponiveis, type Provedor } from "./modelos";
 import { relatorioMarkdown } from "./relatorio";
 
@@ -190,6 +191,7 @@ async function rotear(req: IncomingMessage, res: ServerResponse, html: () => str
   if (metodo === "GET" && p[1] === "estado") {
     return json(res, 200, {
       provedores: provedoresDisponiveis(),
+      chatgpt: estadoDoLogin(),
       modelosPadrao: {
         bella: process.env.BELLA_LAB_MODELO ?? MODELO_PADRAO_BELLA,
         persona: process.env.BELLA_LAB_MODELO_PERSONA ?? MODELO_PADRAO_PERSONA,
@@ -211,6 +213,32 @@ async function rotear(req: IncomingMessage, res: ServerResponse, html: () => str
     definirChave(provedor, chave);
     if (b.lembrar || chave === null) lembrarChave(provedor, b.lembrar ? chave : null);
     return json(res, 200, { provedores: provedoresDisponiveis() });
+  }
+
+  // ── login com a assinatura do ChatGPT ──
+  if (p[1] === "chatgpt") {
+    if (metodo === "GET" && p[2] === "estado") return json(res, 200, estadoDoLogin());
+    if (metodo === "POST" && p[2] === "iniciar") return json(res, 200, await iniciarLogin());
+    if (metodo === "POST" && p[2] === "colar") {
+      const b = await corpo(req);
+      try {
+        await colarRetorno(texto(b.retorno));
+      } catch (e) {
+        throw new ErroHttp(400, e instanceof Error ? e.message : String(e));
+      }
+      return json(res, 200, estadoDoLogin());
+    }
+    if (metodo === "POST" && p[2] === "sair") {
+      sair();
+      return json(res, 200, estadoDoLogin());
+    }
+    if (metodo === "GET" && p[2] === "modelos") {
+      try {
+        return json(res, 200, { modelos: await modelosDaAssinatura() });
+      } catch (e) {
+        throw new ErroHttp(502, e instanceof Error ? e.message : String(e));
+      }
+    }
   }
 
   // POST /api/playbook {texto} — grava o playbook.md de verdade

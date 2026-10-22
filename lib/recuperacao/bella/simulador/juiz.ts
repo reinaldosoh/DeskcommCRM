@@ -5,10 +5,8 @@
  * que não veio de ferramenta, fechar sem aceite claro, insistir depois de
  * opt-out, sair do assunto, tom.
  */
-import { generateText } from "ai";
-
 import type { Ambiente } from "../lab/ambiente";
-import { modeloDe } from "./modelos";
+import { gerar } from "./modelos";
 
 export interface Violacao {
   regra: string;
@@ -59,7 +57,7 @@ export async function julgar(amb: Ambiente, playbook: string, modeloId: string, 
     '"resumo": "uma frase sobre a conversa"}\n\n' +
     `=== PLAYBOOK ===\n${playbook}\n\n=== CONVERSA ===\n${transcricao(amb)}`;
   try {
-    const r = await generateText({ model: modeloDe(modeloId), prompt, abortSignal: sinal, maxRetries: 3 });
+    const r = await gerar(modeloId, { prompt, abortSignal: sinal, maxRetries: 3 });
     const bruto = r.text;
     const v = JSON.parse(bruto.slice(bruto.indexOf("{"), bruto.lastIndexOf("}") + 1)) as Veredito;
     return {

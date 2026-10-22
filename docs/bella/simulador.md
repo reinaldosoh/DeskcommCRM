@@ -9,8 +9,10 @@ pnpm bella:sim                  # http://127.0.0.1:4545
 pnpm bella:sim --host 0.0.0.0   # abrir pelo celular na mesma rede
 ```
 
-Na primeira vez, cole a chave em **Configurar** (Anthropic, OpenAI ou
-ModelRouter) ou defina `ANTHROPIC_API_KEY` no `.env.local`. Modelos no formato
+Na primeira vez, em **Configurar**: clique em **Entrar com ChatGPT** para usar
+a sua assinatura (sem chave de API; modelos `chatgpt:…`), ou cole uma chave
+(Anthropic, OpenAI ou ModelRouter), ou defina `ANTHROPIC_API_KEY` no
+`.env.local`. Modelos no formato
 `provedor:modelo` (ex.: `anthropic:claude-sonnet-5-5`).
 
 ## O que é de verdade e o que é simulado

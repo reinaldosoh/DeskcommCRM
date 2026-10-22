@@ -236,4 +236,17 @@ describe("servidor do simulador", () => {
     expect(a.achados.filter((x) => !x.ok && x.nivel === "falha")).toEqual([]);
     expect((await post("/api/manual/nao-existe/falar", { texto: "oi" })).status).toBe(404);
   });
+
+  it("login do ChatGPT: abre a autorização SIWC e recusa retorno de outro login", async () => {
+    const r = (await (await post("/api/chatgpt/iniciar", {})).json()) as { url: string };
+    const url = new URL(r.url);
+    expect(url.origin).toBe("https://auth.openai.com");
+    expect(url.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:1455/auth/callback");
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    const est = (await (await fetch(base() + "/api/chatgpt/estado")).json()) as { conectado: boolean; aguardando: boolean };
+    expect(est).toMatchObject({ conectado: false, aguardando: true });
+    const colado = await post("/api/chatgpt/colar", { retorno: "http://127.0.0.1:1455/auth/callback?code=x&state=outro" });
+    expect(colado.status).toBe(400);
+    await post("/api/chatgpt/sair", {});
+  });
 });

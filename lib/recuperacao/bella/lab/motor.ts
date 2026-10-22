@@ -11,7 +11,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { generateText, stepCountIs, tool, type ModelMessage, type SystemModelMessage, type ToolSet } from "ai";
+import { stepCountIs, tool, type ModelMessage, type SystemModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
 
 import {
@@ -23,7 +23,7 @@ import {
 } from "@/lib/mcp/tools/recuperacao";
 
 import { playbookDaBella } from "../definicao";
-import { modeloDe, provedorDe } from "../simulador/modelos";
+import { gerar, modeloDe, provedorDe } from "../simulador/modelos";
 import { criarAmbiente, type Ambiente, type DividaDoAmbiente } from "./ambiente";
 import type { Cenario } from "./cenarios";
 
@@ -175,8 +175,7 @@ export class SessaoBella {
     });
     try {
       for (let tentativa = 0; tentativa <= MAX_REESCRITAS; tentativa++) {
-        const r = await generateText({
-          model: modeloDe(this.modeloBella),
+        const r = await gerar(this.modeloBella, {
           instructions: this.instrucoes(),
           messages: this.historico,
           tools: this.tools,
@@ -210,8 +209,7 @@ export class SessaoBella {
 
   /** A persona simulada escreve a próxima fala do devedor; `null` quando ela encerra. */
   async falaDaPersona(persona: string, cpfQueSabe: string, sinal?: AbortSignal): Promise<string | null> {
-    const fala = await generateText({
-      model: modeloDe(this.modeloPersona),
+    const fala = await gerar(this.modeloPersona, {
       system:
         `${persona}\nOs 3 primeiros dígitos do CPF que você sabe: ${cpfQueSabe}.\n` +
         "Você está numa conversa de WhatsApp com uma empresa de cobrança. Responda como no WhatsApp: curto, " +
@@ -251,8 +249,7 @@ export async function conversarComModelo(cenario: Cenario, opcoes: OpcoesDoMotor
 /** Juiz por modelo: tom e empatia, que regra fixa não mede. Nota de 1 a 5 por item. */
 export async function julgarTom(amb: Ambiente, modeloId?: string) {
   const conversa = amb.conversa.map((m) => `${m.autor === "bella" ? "BELLA" : "DEVEDOR"}: ${m.texto}`).join("\n");
-  const r = await generateText({
-    model: modeloDe(modeloId ?? process.env.BELLA_LAB_MODELO_PERSONA ?? MODELO_PADRAO_PERSONA),
+  const r = await gerar(modeloId ?? process.env.BELLA_LAB_MODELO_PERSONA ?? MODELO_PADRAO_PERSONA, {
     system:
       "Você avalia conversas de negociação de dívida por WhatsApp. Responda SÓ um JSON " +
       '{"respeito":n,"empatia":n,"clareza":n,"objetividade":n,"comentario":"..."} com notas de 1 a 5.',

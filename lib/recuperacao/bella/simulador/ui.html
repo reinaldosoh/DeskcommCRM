@@ -253,12 +253,26 @@ tr.item:hover td{background:#f6f8fa}
   <!-- ───────── CONFIG ───────── -->
   <section class="painel" id="p-config">
     <div class="grade2">
+      <div>
+      <div class="card" style="margin-bottom:14px">
+        <h2>Assinatura do ChatGPT</h2>
+        <p class="muted">Use o seu plano do ChatGPT, sem chave de API. Os tokens ficam só neste computador (<code>.bella-sim/chatgpt.local.json</code>).</p>
+        <div id="gpt-status" class="muted">verificando…</div>
+        <div class="acoes"><button class="prim" id="gpt-entrar">Entrar com ChatGPT</button><button id="gpt-sair" style="display:none">Sair</button></div>
+        <div id="gpt-colar" style="display:none">
+          <label>Se a aba não fechar sozinha: copie o endereço da barra do navegador (começa com http://127.0.0.1:1455/auth/callback) e cole aqui</label>
+          <div style="display:flex;gap:6px"><input id="gpt-retorno" placeholder="http://127.0.0.1:1455/auth/callback?code=…"><button id="gpt-enviar">Conectar</button></div>
+        </div>
+        <div id="gpt-modelos" class="muted" style="margin-top:8px"></div>
+        <div class="erro-msg" id="gpt-erro"></div>
+      </div>
       <div class="card">
         <h2>Chaves dos modelos</h2>
         <p class="muted">Ficam só na memória do simulador; marque "lembrar" para gravar em <code>.bella-sim/chaves.local.json</code> (fora do git). Dados do simulador são fictícios.</p>
         <div id="cfg-chaves"></div>
         <h3>Modelo do juiz para a aba Conversa</h3>
         <input id="cfg-juiz" list="modelos">
+      </div>
       </div>
       <div class="card">
         <h2>Playbook da Bella</h2>
@@ -278,7 +292,7 @@ tr.item:hover td{background:#f6f8fa}
 
 <datalist id="modelos">
   <option value="anthropic:claude-sonnet-5-5"><option value="anthropic:claude-haiku-5-5"><option value="anthropic:claude-opus-5-5">
-  <option value="openai:gpt-5.5"><option value="openai:gpt-5.5-mini"><option value="modelrouter:claude-sonnet-5-5">
+  <option value="chatgpt:gpt-5.5"><option value="chatgpt:gpt-5.5-mini"><option value="openai:gpt-5.5"><option value="openai:gpt-5.5-mini"><option value="modelrouter:claude-sonnet-5-5">
 </datalist>
 
 <script>
@@ -311,7 +325,7 @@ function pintarChaves() {
   const p = EST.provedores;
   $("#chaves").innerHTML = Object.entries(p).map(([k, on]) => `<span class="pill ${on ? "on" : ""}"><i></i>${k}</span>`).join("");
   $("#aviso-chave").style.display = Object.values(p).some(Boolean) ? "none" : "block";
-  $("#cfg-chaves").innerHTML = Object.entries(p).map(([k, on]) => `
+  $("#cfg-chaves").innerHTML = Object.entries(p).filter(([k]) => k !== "chatgpt").map(([k, on]) => `
     <label>${k} ${on ? '<span class="tag verde">configurada</span>' : '<span class="tag">sem chave</span>'}</label>
     <div style="display:flex;gap:6px"><input type="password" id="k-${k}" placeholder="${on ? "•••••• (colar outra substitui)" : "cole a chave"}" autocomplete="off">
     <button data-k="${k}" class="salvar-chave">Salvar</button>${on ? `<button data-k="${k}" class="apagar-chave" title="Esquecer">✕</button>` : ""}</div>
@@ -674,10 +688,56 @@ $("#cfg-salvar").onclick = async () => {
 };
 $("#cfg-recarregar").onclick = async () => { EST = await api("GET", "/api/estado"); $("#cfg-playbook").value = EST.playbook; $("#cfg-status").textContent = "recarregado"; };
 
+
+// ───────── ChatGPT ─────────
+let gptTimer = null;
+async function pintarGpt(e) {
+  e = e || (await api("GET", "/api/chatgpt/estado"));
+  $("#gpt-status").innerHTML = e.conectado ? `<span class="tag verde">conectado</span> ${esc(e.email || "")} — use modelos <code>chatgpt:…</code>` : e.aguardando ? '<span class="tag azul">aguardando o login na aba da OpenAI…</span>' : '<span class="tag">não conectado</span>';
+  $("#gpt-entrar").style.display = e.conectado ? "none" : "";
+  $("#gpt-sair").style.display = e.conectado ? "" : "none";
+  $("#gpt-colar").style.display = !e.conectado && e.aguardando ? "" : "none";
+  const er = $("#gpt-erro"); er.style.display = e.erro ? "block" : "none"; er.textContent = e.erro || "";
+  if (EST && EST.provedores.chatgpt !== e.conectado) { EST.provedores.chatgpt = e.conectado; pintarChaves(); }
+  if (e.conectado && !$("#gpt-modelos").dataset.ok) {
+    $("#gpt-modelos").dataset.ok = "1";
+    api("GET", "/api/chatgpt/modelos").then((r) => {
+      const dl = $("#modelos");
+      for (const m of r.modelos) if (!dl.querySelector(`option[value="chatgpt:${CSS.escape(m)}"]`)) dl.insertAdjacentHTML("afterbegin", `<option value="chatgpt:${esc(m)}">`);
+      usarChatgptPorPadrao(r.modelos[0] || "gpt-5.5");
+      $("#gpt-modelos").innerHTML = r.modelos.length ? "Modelos da sua conta: " + r.modelos.map((m) => `<code>chatgpt:${esc(m)}</code>`).join(" ") : "";
+    }).catch((err) => (usarChatgptPorPadrao("gpt-5.5"), $("#gpt-modelos").textContent = "Não consegui listar os modelos (" + err.message + "). Digite o id, ex.: chatgpt:gpt-5.5"));
+  }
+  clearTimeout(gptTimer);
+  if (e.aguardando && !e.conectado) gptTimer = setTimeout(() => pintarGpt(), 2000);
+  return e;
+}
+/** Sem chave da Anthropic, os campos que ainda apontam para ela passam a usar a assinatura. */
+function usarChatgptPorPadrao(modelo) {
+  if (EST.provedores.anthropic) return;
+  for (const [sel, k] of [["#c-modelo", "mBellaConv"], ["#l-mbella", "mBella"], ["#l-mpersona", "mPersona"], ["#l-mjuiz", "mJuiz"], ["#cfg-juiz", "mJuizConv"]]) {
+    const el = $(sel);
+    if (!el.value || el.value.startsWith("anthropic:")) { el.value = "chatgpt:" + modelo; LS.set(k, el.value); }
+  }
+}
+$("#gpt-entrar").onclick = async () => {
+  try {
+    const r = await api("POST", "/api/chatgpt/iniciar");
+    window.open(r.url, "_blank");
+    pintarGpt();
+  } catch (e) { $("#gpt-erro").style.display = "block"; $("#gpt-erro").textContent = e.message; }
+};
+$("#gpt-enviar").onclick = async () => {
+  try { pintarGpt(await api("POST", "/api/chatgpt/colar", { retorno: $("#gpt-retorno").value })); }
+  catch (e) { $("#gpt-erro").style.display = "block"; $("#gpt-erro").textContent = e.message; }
+};
+$("#gpt-sair").onclick = async () => { $("#gpt-modelos").dataset.ok = ""; $("#gpt-modelos").textContent = ""; pintarGpt(await api("POST", "/api/chatgpt/sair")); };
+
 // ───────── início ─────────
 (async () => {
   EST = await api("GET", "/api/estado");
   pintarChaves();
+  pintarGpt(EST.chatgpt);
   $("#c-cenario").innerHTML = `<option value="">Livre — eu sou o devedor</option>` + Object.entries(GRUPOS).map(([g, n]) => `<optgroup label="${esc(n)}">${EST.catalogo.filter((c) => c.grupo === g).map((c) => `<option value="${esc(c.id)}">${esc(c.titulo)}</option>`).join("")}</optgroup>`).join("") + `<optgroup label="Aleatório"><option value="caos_${Math.floor(Math.random() * 9999)}">Persona aleatória</option></optgroup>`;
   preencherDivida(EST.dividaPadrao);
   $("#c-agora").value = isoLocalSP(EST.agoraPadrao);

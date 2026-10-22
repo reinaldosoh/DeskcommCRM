@@ -4,6 +4,7 @@
  *   anthropic:claude-sonnet-5-5     ANTHROPIC_API_KEY
  *   openai:gpt-5.5                  OPENAI_API_KEY
  *   modelrouter:<id>                MODELROUTER_API_KEY (+ MODELROUTER_BASE_URL)
+ *   chatgpt:<id>                    login com a assinatura do ChatGPT (`chatgpt.ts`)
  *
  * Sem prefixo, é Anthropic (compatível com o `BELLA_LAB_MODELO` antigo). A
  * chave pode vir do ambiente ou ser colada na tela do simulador — fica só na
@@ -14,8 +15,13 @@
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
+import { generateText, streamText, type LanguageModel } from "ai";
 
+import { OPENAI_CODEX_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+
+import { estadoDoLogin, tokenDaAssinatura } from "./chatgpt";
+
+/** Provedores por CHAVE de API (o ChatGPT entra por login, à parte). */
 export const PROVEDORES = ["anthropic", "openai", "modelrouter"] as const;
 export type Provedor = (typeof PROVEDORES)[number];
 
@@ -37,19 +43,24 @@ function chaveDe(provedor: Provedor): string | undefined {
 }
 
 /** Quais provedores têm chave agora (para a tela mostrar o que dá para usar). */
-export function provedoresDisponiveis(): Record<Provedor, boolean> {
-  return Object.fromEntries(PROVEDORES.map((p) => [p, !!chaveDe(p)])) as Record<Provedor, boolean>;
+export function provedoresDisponiveis(): Record<Provedor | "chatgpt", boolean> {
+  return {
+    ...(Object.fromEntries(PROVEDORES.map((p) => [p, !!chaveDe(p)])) as Record<Provedor, boolean>),
+    chatgpt: estadoDoLogin().conectado,
+  };
 }
 
-export function separar(spec: string): { provedor: Provedor; id: string } {
+export function separar(spec: string): { provedor: Provedor | "chatgpt"; id: string } {
   const i = spec.indexOf(":");
   if (i < 0) return { provedor: "anthropic", id: spec };
-  const provedor = spec.slice(0, i) as Provedor;
-  if (!PROVEDORES.includes(provedor)) throw new Error(`provedor desconhecido: ${provedor} (use ${PROVEDORES.join(", ")})`);
+  const provedor = spec.slice(0, i) as Provedor | "chatgpt";
+  if (provedor !== "chatgpt" && !PROVEDORES.includes(provedor)) {
+    throw new Error(`provedor desconhecido: ${provedor} (use ${PROVEDORES.join(", ")} ou chatgpt)`);
+  }
   return { provedor, id: spec.slice(i + 1) };
 }
 
-export function provedorDe(spec: string): Provedor | "teste" {
+export function provedorDe(spec: string): Provedor | "chatgpt" | "teste" {
   return spec.startsWith("teste:") ? "teste" : separar(spec).provedor;
 }
 
@@ -66,6 +77,7 @@ export function modeloDe(spec: string): LanguageModel {
     return m;
   }
   const { provedor, id } = separar(spec);
+  if (provedor === "chatgpt") throw new Error("chatgpt: use gerar(), que renova o login antes de chamar");
   const apiKey = chaveDe(provedor);
   if (!apiKey) throw new Error(`sem chave para ${provedor}: defina ${VARIAVEL[provedor]} ou cole a chave no simulador`);
   switch (provedor) {
@@ -75,5 +87,36 @@ export function modeloDe(spec: string): LanguageModel {
       return createOpenAI({ apiKey })(id);
     case "modelrouter":
       return createOpenAI({ apiKey, baseURL: process.env.MODELROUTER_BASE_URL ?? "https://modelrouter.id/v1" }).chat(id);
+  }
+}
+
+type OpcoesDeGerar = Omit<Parameters<typeof generateText>[0], "model">;
+
+/**
+ * Uma chamada de modelo pelo `spec`. Igual a `generateText` para quem tem
+ * chave; pela assinatura do ChatGPT vai em streaming com `store:false` e sem
+ * opções de amostragem (o contrato do SIWC, o mesmo de `runModelCall`).
+ */
+export async function gerar(spec: string, opcoes: OpcoesDeGerar) {
+  if (provedorDe(spec) !== "chatgpt") {
+    const r = await generateText({ ...opcoes, model: modeloDe(spec) } as Parameters<typeof generateText>[0]);
+    return { text: r.text, totalUsage: r.totalUsage, responseMessages: r.responseMessages };
+  }
+  const apiKey = await tokenDaAssinatura();
+  const model = createOpenAI({ apiKey, baseURL: OPENAI_CODEX_ENDPOINT })(separar(spec).id);
+  let erroDoStream: unknown = null;
+  const r = streamText({
+    ...(opcoes as Parameters<typeof streamText>[0]),
+    model,
+    providerOptions: { openai: { store: false } },
+    onError: ({ error }) => {
+      erroDoStream = error;
+    },
+  });
+  try {
+    const [text, totalUsage, responseMessages] = await Promise.all([r.text, r.totalUsage, r.responseMessages]);
+    return { text, totalUsage, responseMessages };
+  } catch (e) {
+    throw erroDoStream ?? e;
   }
 }
