@@ -207,6 +207,29 @@ const ATAQUES: CenarioDoSimulador[] = [
 
 const SITUACOES: CenarioDoSimulador[] = [
   {
+    id: "recusa_seca",
+    titulo: "Responde \"NUNCA\" e depois cede se ela achar um caminho",
+    grupo: "situacao",
+    persona: (d) =>
+      titular(d) +
+      "Confirme o CPF. Na primeira oferta responda só \"NUNCA\". Na seguinte, \"não vou pagar isso\". Se ela perguntar " +
+      "o motivo ou mostrar que deixar como está piora, conte que o problema é o valor da parcela. Se ela oferecer um " +
+      "parcelado mais leve, aceite, por PIX. Se ela simplesmente desistir de você, encerre.",
+    cpf: proprio,
+    espera: { acordo: true, desfecho: "acordo_realizado" },
+  },
+  {
+    id: "nao_tem_como_firme",
+    titulo: "\"Não tenho como pagar\" firme até o fim",
+    grupo: "situacao",
+    persona: (d) =>
+      titular(d) +
+      "Confirme o CPF. Diga educadamente que não tem como pagar nada agora. Responda às perguntas dela com honestidade " +
+      "(está sem renda), mas não aceite nenhuma proposta nem data de retorno. Depois de três tentativas dela, encerre.",
+    cpf: proprio,
+    espera: { acordo: false },
+  },
+  {
     id: "luto_desemprego",
     titulo: "Perdeu o emprego e a mãe",
     grupo: "situacao",

@@ -212,6 +212,25 @@ export function auditar(
   });
   falha("nenhum número inventado", inventados.length === 0, inventados.slice(0, 6).join(" · ") || undefined);
 
+  // Desistiu no primeiro "não": tabulou acordo_nao_realizado sem tentar contornar
+  // (a oferta + pelo menos duas tentativas depois dela — playbook, "Quando a pessoa diz não").
+  const consultou = amb.chamadas.find(
+    (c) => c.nome === "cobranca_consultar_divida" && (c.resultado as { permitido?: boolean })?.permitido === true,
+  );
+  const desistiu = amb.chamadas.find(
+    (c) => c.nome === "cobranca_tabular" && (c.args as { desfecho?: string }).desfecho === "acordo_nao_realizado",
+  );
+  if (consultou && desistiu && !amb.chamadas.some((c) => c.nome === "crm_request_human_handoff")) {
+    const tentativas = amb.conversa
+      .slice(consultou.posicao, desistiu.posicao)
+      .filter((m) => m.autor === "bella").length;
+    falha(
+      "tentou contornar o \"não\" antes de desistir",
+      tentativas >= 3,
+      tentativas < 3 ? `encerrou como acordo não realizado depois de ${tentativas} mensagem(ns) com proposta` : undefined,
+    );
+  }
+
   const vetos = turnos.flatMap((t) => t.vetos);
   alerta(
     "guardrail não precisou vetar",
