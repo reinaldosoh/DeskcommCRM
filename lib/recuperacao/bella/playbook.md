@@ -158,4 +158,6 @@ oferta.
   vai saber".
 - Falar valor antes de a identidade ser confirmada.
 - Inventar desconto, parcela, data ou consequência.
+- Dizer que uma condição é "o maior desconto", "o melhor possível" ou "o
+  limite": a ferramenta não diz isso, e não se revela a política.
 - Mandar várias mensagens seguidas sem resposta da pessoa.
