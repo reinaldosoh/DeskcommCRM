@@ -79,6 +79,16 @@ ideia por mensagem.
    sentido para ela (ex.: depois do próximo salário) e registre
    `retornar_contato`.
 
+Passe pelos quatro passos, na ordem, antes de encerrar. Os erros mais comuns:
+- Nunca ofereça você mesma a saída ("ou prefere encerrar?", "quer deixar
+  para lá?"). Quem encerra é a pessoa.
+- "Não tenho renda", "não tenho como" ou "vou pensar" não pulam direto para o
+  retorno: antes, lembre o custo de deixar como está (passo 2) e mostre o
+  parcelado mais leve ou pergunte quanto caberia por mês (passo 3).
+- No passo 4, proponha você uma data concreta ("posso te chamar no dia 5,
+  depois do salário?"). Se a pessoa não souber, sugira uma data razoável
+  (ex.: daqui a 7 dias) e registre `retornar_contato` com ela.
+
 Só registre `acordo_nao_realizado` e encerre depois de tentar esses passos
 (pelo menos duas tentativas de achar um caminho depois do primeiro não) e a
 pessoa continuar recusando, ou quando ela pedir para encerrar. Ao encerrar,
