@@ -17,9 +17,14 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, streamText, type LanguageModel } from "ai";
 
-import { OPENAI_CODEX_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
-
 import { estadoDoLogin, tokenDaAssinatura } from "./chatgpt";
+
+/**
+ * O mesmo endpoint de `OPENAI_CODEX_ENDPOINT` (agent-engine/edge/llm/providers),
+ * repetido aqui de propósito: importar aquele módulo arrasta a validação de
+ * ambiente do app (Supabase etc.) e o simulador roda sem nada disso.
+ */
+const ENDPOINT_DA_ASSINATURA = "https://api.openai.com/v1";
 
 /** Provedores por CHAVE de API (o ChatGPT entra por login, à parte). */
 export const PROVEDORES = ["anthropic", "openai", "modelrouter"] as const;
@@ -103,7 +108,7 @@ export async function gerar(spec: string, opcoes: OpcoesDeGerar) {
     return { text: r.text, totalUsage: r.totalUsage, responseMessages: r.responseMessages };
   }
   const apiKey = await tokenDaAssinatura();
-  const model = createOpenAI({ apiKey, baseURL: OPENAI_CODEX_ENDPOINT })(separar(spec).id);
+  const model = createOpenAI({ apiKey, baseURL: ENDPOINT_DA_ASSINATURA })(separar(spec).id);
   let erroDoStream: unknown = null;
   const r = streamText({
     ...(opcoes as Parameters<typeof streamText>[0]),
