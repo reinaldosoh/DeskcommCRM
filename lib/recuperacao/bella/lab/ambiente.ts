@@ -41,12 +41,33 @@ export interface Chamada {
   posicao: number;
 }
 
-export function criarAmbiente(agora: Date = AGORA_DO_LAB) {
+/** A dívida e a pessoa de uma conversa. O padrão é o João do teste real da Mia. */
+export interface DividaDoAmbiente {
+  nome: string;
+  credor: string;
+  produto: string;
+  valorCents: number;
+  vencimento: string;
+  parcelasVencidas: number;
+  cpfPrefixo: string;
+}
+
+export const DIVIDA_PADRAO: DividaDoAmbiente = {
+  nome: "João Carlos",
+  credor: "Banco Nova Era",
+  produto: "cartão de crédito",
+  valorCents: 376_976,
+  vencimento: "2026-03-10",
+  parcelasVencidas: 7,
+  cpfPrefixo: "123",
+};
+
+export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbiente = DIVIDA_PADRAO) {
   const estado: EstadoEmMemoria = {
     carteiras: [
       {
         id: "k-lab",
-        credor_nome: "Banco Nova Era",
+        credor_nome: divida.credor,
         politica: {},
         contato_hora_inicio: 8,
         contato_hora_fim: 20,
@@ -58,11 +79,11 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB) {
         id: DIVIDA_DO_LAB,
         carteira_id: "k-lab",
         contact_id: CONTATO_DO_LAB,
-        produto: "cartão de crédito",
-        valor_devido_cents: 376_976,
-        vencimento_original: "2026-03-10",
-        parcelas_vencidas: 7,
-        cpf_prefixo: "123",
+        produto: divida.produto,
+        valor_devido_cents: divida.valorCents,
+        vencimento_original: divida.vencimento,
+        parcelas_vencidas: divida.parcelasVencidas,
+        cpf_prefixo: divida.cpfPrefixo,
         status: "aberta",
         identidade_tentativas: 0,
         identidade_verificada_em: null,
@@ -108,7 +129,7 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB) {
         resultado = await simularAcordo(ctx, a.divida_id, pedidoDe(a));
         break;
       case "cobranca_fechar_acordo":
-        resultado = await fecharAcordo(ctx, a.divida_id, pedidoDe(a), a.meio ?? "pix", "João Carlos");
+        resultado = await fecharAcordo(ctx, a.divida_id, pedidoDe(a), a.meio ?? "pix", divida.nome);
         break;
       case "cobranca_tabular":
         resultado = await tabular(ctx, {
@@ -161,7 +182,7 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB) {
     conversa.push({ autor: "devedor", texto, vetos: [] });
   }
 
-  return { estado, ctx, conversa, chamadas, handoffs, executar, tentarEnviar, devedorDiz, estadoDoEnvio };
+  return { divida, agora, estado, ctx, conversa, chamadas, handoffs, executar, tentarEnviar, devedorDiz, estadoDoEnvio };
 }
 
 export type Ambiente = ReturnType<typeof criarAmbiente>;

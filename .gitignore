@@ -188,3 +188,4 @@ __pycache__/
 
 # relatórios do laboratório da Bella
 .bella-lab/
+.bella-sim/

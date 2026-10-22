@@ -10,7 +10,7 @@ import { formatCentsBRL } from "@/lib/money";
 import { montarBrCode } from "./br-code";
 import type { CobrancaGerada, PedidoDeCobranca, ProvedorDePagamento } from "./tipos";
 
-export const CHAVE_PIX_FAKE = "teste@pacare.invalid";
+export const CHAVE_PIX_FAKE = "teste@ruios.invalid";
 
 function txidDe(p: PedidoDeCobranca): string {
   return `TESTE${p.acordoId.replace(/-/g, "").slice(0, 14)}P${p.parcela}`.toUpperCase();
@@ -53,7 +53,7 @@ export class ProvedorFake implements ProvedorDePagamento {
         copiaECola: montarBrCode({
           chave: CHAVE_PIX_FAKE,
           valorCents: p.valorCents,
-          nomeRecebedor: "PACARE TESTE",
+          nomeRecebedor: "RUIOS TESTE",
           cidade: "SAO PAULO",
           txid,
         }),
@@ -73,7 +73,7 @@ export class ProvedorFake implements ProvedorDePagamento {
       "",
       `Linha digitável: ${linha}`,
       "",
-      "Gerado pelo período de validação da Pacare. Nenhum banco reconhece este documento.",
+      "Gerado pelo período de validação da Ruios. Nenhum banco reconhece este documento.",
     ].join("\n");
     return {
       provedor: this.nome,

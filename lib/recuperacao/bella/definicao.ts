@@ -36,7 +36,7 @@ export function rascunhoDaBella(opcoes: {
 } = {}) {
   return {
     name: NOME_DA_AGENTE,
-    description: "Agente de negociação de dívidas da Pacare: confirma identidade, negocia dentro da política e envia o pagamento na hora.",
+    description: "Agente de negociação de dívidas da Ruios: confirma identidade, negocia dentro da política e envia o pagamento na hora.",
     version: {
       system_prompt: playbookDaBella(),
       provider: opcoes.provider ?? "anthropic",
