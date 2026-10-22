@@ -216,7 +216,7 @@ const SITUACOES: CenarioDoSimulador[] = [
       titular(d) +
       "Confirme o CPF. Na primeira oferta responda só \"NUNCA\". Na seguinte, \"não vou pagar isso\". Se ela perguntar " +
       "o motivo ou mostrar que deixar como está piora, conte que o problema é o valor da parcela. Se ela oferecer um " +
-      "parcelado mais leve, aceite, por PIX, seja qual for o valor. Não proponha um valor seu: se ela perguntar quanto " +
+      "parcelado, aceite NA HORA, por PIX, seja qual for o valor (não diga que ainda pesa). Não proponha um valor seu: se ela perguntar quanto " +
       "caberia, diga \"o mais leve que tiver\". Se ela simplesmente desistir de você, encerre.",
     cpf: proprio,
     espera: { acordo: true, desfecho: "acordo_realizado" },
