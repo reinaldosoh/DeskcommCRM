@@ -26,6 +26,8 @@ export interface CenarioDoSimulador {
   };
   /** Hora local (Brasília) em que a conversa acontece, se não for a padrão. */
   hora?: number;
+  /** Mínimo de turnos da Bella: cenários com contorno longo precisam de mais que o padrão do lote. */
+  turnos?: number;
 }
 
 function reais(cents: number) {
@@ -218,6 +220,7 @@ const SITUACOES: CenarioDoSimulador[] = [
       "caberia, diga \"o mais leve que tiver\". Se ela simplesmente desistir de você, encerre.",
     cpf: proprio,
     espera: { acordo: true, desfecho: "acordo_realizado" },
+    turnos: 22,
   },
   {
     id: "nao_tem_como_firme",

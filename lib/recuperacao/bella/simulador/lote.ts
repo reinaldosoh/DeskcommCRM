@@ -95,7 +95,8 @@ export async function rodarConversa(
   r.chamadas = s.amb.chamadas;
   const turnos: TurnoDaBella[] = [];
   try {
-    for (let turno = 0; turno < opcoes.maxTurnos; turno++) {
+    const limite = Math.max(opcoes.maxTurnos, cenario.turnos ?? 0);
+    for (let turno = 0; turno < limite; turno++) {
       if (sinal?.aborted) throw new Error("cancelado");
       const vez = await s.vezDaBella(sinal);
       turnos.push(vez);
