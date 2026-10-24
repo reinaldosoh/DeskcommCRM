@@ -17,7 +17,8 @@ function conversa(i: ResultadoDaConversa): string {
       const ch = i.chamadas[c]!;
       linhas.push(`    ⚙ ${ch.nome}(${JSON.stringify(ch.args)}) → ${JSON.stringify(ch.resultado).slice(0, 300)}`);
     }
-    linhas.push(`${m.autor === "bella" ? "BELLA" : "DEVEDOR"}: ${m.texto.replace(/\n/g, "\n    ")}`);
+    if (m.autor === "sistema") linhas.push(`--- o tempo passou: ${m.em ?? ""} ---`);
+    else linhas.push(`${m.autor === "bella" ? "BELLA" : "DEVEDOR"}: ${m.texto.replace(/\n/g, "\n    ")}`);
     for (const v of m.vetos) linhas.push(`    ⛔ (antes desta, o guardrail vetou: ${v})`);
   });
   for (; c < i.chamadas.length; c++) linhas.push(`    ⚙ ${i.chamadas[c]!.nome}(${JSON.stringify(i.chamadas[c]!.args)})`);

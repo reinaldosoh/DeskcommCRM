@@ -96,18 +96,27 @@ export async function rodarConversa(
   const turnos: TurnoDaBella[] = [];
   try {
     const limite = Math.max(opcoes.maxTurnos, cenario.turnos ?? 0);
-    for (let turno = 0; turno < limite; turno++) {
-      if (sinal?.aborted) throw new Error("cancelado");
-      const vez = await s.vezDaBella(sinal);
-      turnos.push(vez);
-      r.turnos = turnos.map(({ ms, travou, vetos, erro }) => ({ ms, travou, vetos, erro }));
-      aoMudar?.();
-      if (vez.erro) throw new Error(vez.erro);
-      if (vez.texto === null || s.amb.handoffs.length > 0) break;
-      const fala = await s.falaDaPersona(cenario.persona(r.divida), cenario.cpf(r.divida), sinal);
-      if (fala === null) break;
-      s.devedorDiz(fala);
-      aoMudar?.();
+    const conversar = async (persona: string) => {
+      for (let turno = 0; turno < limite; turno++) {
+        if (sinal?.aborted) throw new Error("cancelado");
+        const vez = await s.vezDaBella(sinal);
+        turnos.push(vez);
+        r.turnos = turnos.map(({ ms, travou, vetos, erro }) => ({ ms, travou, vetos, erro }));
+        aoMudar?.();
+        if (vez.erro) throw new Error(vez.erro);
+        if (vez.texto === null || s.amb.handoffs.length > 0) break;
+        const fala = await s.falaDaPersona(persona, cenario.cpf(r.divida), sinal);
+        if (fala === null) break;
+        s.devedorDiz(fala);
+        aoMudar?.();
+      }
+    };
+    await conversar(cenario.persona(r.divida));
+    // Segunda conversa: o tempo pula até o retorno combinado e a Bella retoma.
+    const combinado = s.amb.estado.dividas[0]!.retornar_em;
+    if (cenario.retorno && combinado && s.amb.handoffs.length === 0) {
+      const alvo = new Date(Math.max(new Date(combinado).getTime(), s.amb.agora.getTime() + 3_600_000));
+      if ((await s.avancarTempo(alvo)).retorno) await conversar(cenario.retorno.persona(r.divida));
     }
     r.achados = auditar(cenario, s.amb, turnos);
     if (opcoes.modeloJuiz && s.amb.conversa.length > 0) {

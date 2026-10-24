@@ -23,6 +23,8 @@ export interface EstadoDaCobrancaNoEnvio {
   /** Maior desconto que a política permite hoje, em pontos percentuais. */
   descontoMaximoPct: number;
   maxParcelas: number;
+  /** A pessoa deu sinal de risco à vida: nada de cobrança até um humano liberar. */
+  cuidado?: boolean;
 }
 
 export type VetoDeCobranca = {
@@ -31,9 +33,13 @@ export type VetoDeCobranca = {
     | "cobranca_fora_do_horario"
     | "cobranca_linguagem_abusiva"
     | "cobranca_valor_antes_da_identidade"
-    | "cobranca_acima_da_politica";
+    | "cobranca_acima_da_politica"
+    | "cobranca_pausada_por_cuidado";
   reason: string;
 };
+
+// Assunto de cobrança (para a pausa por cuidado): proposta, acordo, pagamento.
+const COBRANCA = /\b(acordo|desconto|parcela|parcelad|[àa] vista|pix|boleto|negocia|proposta)/i;
 
 // Valor em dinheiro: "R$ 1.234,56", "R$300", "3.769,76", "200 reais".
 const DINHEIRO = /R\$\s*\d|\b\d{1,3}(?:\.\d{3})*,\d{2}\b|\b\d+(?:[.,]\d+)?\s*reais\b/i;
@@ -76,9 +82,16 @@ function maiorPercentual(texto: string): number | null {
   return maior;
 }
 
+const NEGA_ANTES = /\bn[aã]o\s+(?:consigo|consegui|d[aá]|deu|tem como|posso|foi poss[ií]vel|[eé] poss[ií]vel|sai)\b[^.!?\n]{0,25}$/i;
+const NEGA_DEPOIS = /^[^.!?\n]{0,8}\bn[aã]o\s+(?:d[aá]|deu|consigo|foi liberad|[eé] poss[ií]vel)/i;
+
 function maiorParcelamento(texto: string): number | null {
   let maior: number | null = null;
   for (const m of texto.matchAll(/\b(\d{1,3})\s*(?:x\b|vezes\b|parcelas\b)/gi)) {
+    // "não consegui em 24 vezes" / "24 vezes não dá" é recusa do pedido, não oferta.
+    const antes = texto.slice(Math.max(0, m.index - 40), m.index);
+    const depois = texto.slice(m.index + m[0].length, m.index + m[0].length + 20);
+    if (NEGA_ANTES.test(antes) || NEGA_DEPOIS.test(depois)) continue;
     const v = Number(m[1]);
     if (maior === null || v > maior) maior = v;
   }
@@ -113,6 +126,17 @@ export function avaliarEnvioDeCobranca(
           "agende o contato para o próximo horário permitido em vez de enviar agora.",
       };
     }
+  }
+
+  // Sinal de risco à vida: a conversa continua (acolher, passar ajuda), a cobrança não.
+  if (estado.cuidado && (ativa || DINHEIRO.test(corpo) || COBRANCA.test(corpo))) {
+    return {
+      code: "cobranca_pausada_por_cuidado",
+      reason: ativa
+        ? "a cobrança desta pessoa está pausada por um sinal de risco à vida — não inicie conversa; um humano retoma."
+        : "a cobrança desta pessoa está pausada por um sinal de risco à vida — não fale de valor, acordo, " +
+          "pagamento ou retorno. Acolha, reforce os contatos de ajuda e diga que um atendente vai continuar.",
+    };
   }
 
   if (ABUSIVA.some((r) => r.test(corpo))) {

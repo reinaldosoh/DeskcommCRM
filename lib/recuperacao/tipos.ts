@@ -48,6 +48,12 @@ export interface PoliticaDeNegociacao {
   prazoPrimeiroPagamentoDias: number;
   /** Parcelado tem desconto? Por padrão, não (como a Mia: só à vista tem desconto). */
   descontoNoParceladoPct: number;
+  /**
+   * De quanto em quanto o desconto à vista sobe numa negociação, em pontos
+   * percentuais (0,5 = de 5% para 5,5%). Entre o inicial e o máximo da faixa,
+   * a agente só sobe um passo por vez, e só depois de uma objeção.
+   */
+  passoDescontoPct: number;
 }
 
 export type FormaDePagamento = "a_vista" | "parcelado";

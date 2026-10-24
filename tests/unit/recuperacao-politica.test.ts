@@ -11,6 +11,7 @@ import {
   avaliarPedido,
   diasDeAtraso,
   escadaDeOfertas,
+  proximoDegrauAVista,
   faixaVigente,
   melhorParceladoPossivel,
   propostaAVista,
@@ -122,15 +123,46 @@ describe("avaliar o pedido do devedor", () => {
 });
 
 describe("escada e conferência", () => {
-  it("apresenta inicial, teto e parcelado, sem degrau repetido", () => {
+  it("abre com o inicial e o parcelado — o teto da faixa nunca aparece", () => {
     const escada = escadaDeOfertas(MIA, POLITICA_PADRAO, HOJE);
     expect(escada.map((p) => [p.forma, p.descontoPct])).toEqual([
       ["a_vista", 5],
-      ["a_vista", 10],
       ["parcelado", 0],
     ]);
+    expect(escadaDeOfertas(MIA, POLITICA_PADRAO, HOJE, 6.5)[0]!.descontoPct).toBe(6.5);
     const semFaixa = escadaDeOfertas({ ...MIA, vencimentoOriginal: "2026-10-10" }, POLITICA_PADRAO, HOJE);
     expect(semFaixa).toHaveLength(2);
+  });
+
+  it("o desconto sobe meio ponto por degrau, sem pular, até o teto", () => {
+    const degraus: number[] = [];
+    let liberado: number | null = null;
+    for (;;) {
+      const d = proximoDegrauAVista(MIA, POLITICA_PADRAO, HOJE, liberado);
+      if (d.esgotado) break;
+      degraus.push(d.descontoPct);
+      liberado = d.descontoPct;
+    }
+    expect(degraus).toEqual([5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]);
+  });
+
+  it("com valor proposto, para no menor desconto que chega nele — sem saltar", () => {
+    // R$ 3.560 cabe em 5,57% → na grade de 0,5: 6%? não — 5,5% não chega, 6% chega, mas 6% é 2 degraus: sobe só 1.
+    const um = proximoDegrauAVista(MIA, POLITICA_PADRAO, HOJE, null, 356_000);
+    expect(um).toMatchObject({ esgotado: false, descontoPct: 5.5, alcancaOProposto: false });
+    // Do 5,5%, o 6% alcança: para nele.
+    const dois = proximoDegrauAVista(MIA, POLITICA_PADRAO, HOJE, 5.5, 356_000);
+    expect(dois).toMatchObject({ esgotado: false, descontoPct: 6, alcancaOProposto: true });
+    // Valor que o liberado já cobre: não dá desconto a mais.
+    const ja = proximoDegrauAVista(MIA, POLITICA_PADRAO, HOJE, 6, 360_000);
+    expect(ja).toMatchObject({ esgotado: false, descontoPct: 6, alcancaOProposto: true });
+  });
+
+  it("pedir desconto acima do liberado não fecha, mesmo dentro do teto", () => {
+    const a = avaliarPedido(MIA, POLITICA_PADRAO, HOJE, { forma: "a_vista", descontoPct: 10 }, 5.5);
+    expect(a).toMatchObject({ aceitavel: false, motivo: "desconto_nao_liberado" });
+    if (!a.aceitavel) expect(a.contraproposta.descontoPct).toBe(5.5);
+    expect(avaliarPedido(MIA, POLITICA_PADRAO, HOJE, { forma: "a_vista", descontoPct: 5.5 }, 5.5).aceitavel).toBe(true);
   });
 
   it("saldo que não parcela cai no à vista", () => {

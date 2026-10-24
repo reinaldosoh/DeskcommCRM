@@ -89,6 +89,10 @@ function retrato(m: Manual) {
       status: d.status,
       optOut: d.opt_out_em !== null,
       retornarEm: d.retornar_em,
+      contextoDoRetorno: d.contexto_do_retorno,
+      cuidado: d.cuidado_em !== null,
+      identidadeVerificadaEm: d.identidade_verificada_em,
+      descontoLiberado: d.desconto_liberado_pct,
       acordos: amb.estado.acordos,
       cobrancas: amb.estado.cobrancas,
       tabulacoes: amb.estado.tabulacoes.map((t) => ({ desfecho: t.desfecho, motivo: t.motivo })),
@@ -172,6 +176,9 @@ function dividaDoPedido(b: Record<string, unknown>, base: Date): DividaDoAmbient
     vencimento: /^\d{4}-\d{2}-\d{2}$/.test(texto(d.vencimento)) ? texto(d.vencimento) : DIVIDA_PADRAO.vencimento,
     parcelasVencidas: Number(d.parcelasVencidas) > 0 ? Number(d.parcelasVencidas) : DIVIDA_PADRAO.parcelasVencidas,
     cpfPrefixo: /^\d{3}$/.test(texto(d.cpfPrefixo)) ? texto(d.cpfPrefixo) : DIVIDA_PADRAO.cpfPrefixo,
+    // Campo ausente = o padrão; campo vazio = sem cidade (para testar a ajuda só com os contatos nacionais).
+    cidade: texto(d.cidade, DIVIDA_PADRAO.cidade).trim().slice(0, 80) || undefined,
+    uf: /^[A-Za-z]{2}$/.test(texto(d.uf, DIVIDA_PADRAO.uf).trim()) ? texto(d.uf, DIVIDA_PADRAO.uf).trim().toUpperCase() : undefined,
   };
 }
 
@@ -292,13 +299,32 @@ async function rotear(req: IncomingMessage, res: ServerResponse, html: () => str
         }),
       );
     }
+    // POST /api/manual/:id/tempo {agora} — o tempo anda; retorno vencido = a Bella retoma sozinha.
+    if (metodo === "POST" && p[3] === "tempo") {
+      const b = await corpo(req);
+      const nova = new Date(texto(b.agora));
+      if (Number.isNaN(nova.getTime())) throw new ErroHttp(400, "data/hora inválida");
+      return json(
+        res,
+        200,
+        await comManual(id, async (m) => {
+          if (nova.getTime() <= m.sessao.amb.agora.getTime()) throw new ErroHttp(400, "escolha uma data depois da atual");
+          const { retorno } = await m.sessao.avancarTempo(nova);
+          if (retorno) m.turnos.push(await m.sessao.vezDaBella());
+          return { ...retrato(m), retorno };
+        }),
+      );
+    }
     if (metodo === "POST" && p[3] === "persona") {
       return json(
         res,
         200,
         await comManual(id, async (m) => {
           if (!m.cenario) throw new ErroHttp(400, "esta conversa não tem cenário: escolha um para a persona falar sozinha");
-          const fala = await m.sessao.falaDaPersona(m.cenario.persona(m.sessao.amb.divida), m.cenario.cpf(m.sessao.amb.divida));
+          // Depois que o tempo andou, a persona do cenário de retorno é a da segunda conversa.
+          const depois = m.cenario.retorno && m.sessao.amb.conversa.some((x) => x.autor === "sistema");
+          const persona = depois ? m.cenario.retorno!.persona : m.cenario.persona;
+          const fala = await m.sessao.falaDaPersona(persona(m.sessao.amb.divida), m.cenario.cpf(m.sessao.amb.divida));
           if (fala === null) return { ...retrato(m), personaEncerrou: true };
           m.sessao.devedorDiz(fala);
           m.turnos.push(await m.sessao.vezDaBella());

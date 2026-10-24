@@ -7,11 +7,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { ProvedorFake } from "@/lib/recuperacao/pagamento/fake";
 import { repositorioEmMemoria, type EstadoEmMemoria } from "@/lib/recuperacao/repositorio";
+import { notaDoRetorno, retornoVencido } from "@/lib/recuperacao/retorno";
 import {
   consultarDividas,
   fecharAcordo,
   hojeLocal,
   lerPolitica,
+  pedirCondicaoMelhor,
+  registrarCuidado,
   simularAcordo,
   tabular,
   verificarIdentidade,
@@ -35,6 +38,12 @@ function novoEstado(): EstadoEmMemoria {
     identidade_bloqueada_ate: null,
     opt_out_em: null,
     retornar_em: null,
+    desconto_liberado_pct: null,
+    desconto_liberado_job: null,
+    devedor_cidade: "Campinas",
+    devedor_uf: "SP",
+    contexto_do_retorno: null,
+    cuidado_em: null,
   };
   return {
     carteiras: [
@@ -112,9 +121,34 @@ describe("depois da identidade", () => {
     const ofertas = r.dividas[0]!.ofertas;
     expect(ofertas.map((o) => o.texto)).toEqual([
       "R$ 3.581,27 à vista (5% de desconto), para pagar até 26/10/2026",
-      "R$ 3.392,78 à vista (10% de desconto), para pagar até 26/10/2026",
       expect.stringMatching(/^entrada de R\$ .* \+ 11x de R\$ /),
     ]);
+    expect(JSON.stringify(r)).not.toContain("10%");
+  });
+
+  it("condição melhor: um degrau por run, com objeção, e o fechamento respeita o liberado", async () => {
+    const id = (await consultarDividas(ctx) as { dividas: Array<{ divida_id: string }> }).dividas[0]!.divida_id;
+    const fecharDez = () =>
+      fecharAcordo(ctx, id, { forma: "a_vista", descontoPct: 10 }, "pix", "João");
+    expect(await fecharDez()).toMatchObject({ permitido: false, motivo: "desconto_nao_liberado" });
+
+    expect(await pedirCondicaoMelhor(ctx, id, { objecao: "valor_total", oQueAPessoaDisse: "" })).toMatchObject({
+      permitido: false,
+      motivo: "sem_objecao",
+    });
+    const r1 = { ...ctx, sourceJobId: "run-1" };
+    const um = await pedirCondicaoMelhor(r1, id, { objecao: "valor_total", oQueAPessoaDisse: "achou caro" });
+    expect(um).toMatchObject({ conseguiu: true, nova_oferta: { descontoPct: 5.5 } });
+    expect((um as { nova_oferta: { texto: string } }).nova_oferta.texto).toContain("5,5% de desconto");
+    expect(await pedirCondicaoMelhor(r1, id, { objecao: "valor_total", oQueAPessoaDisse: "ainda caro" })).toMatchObject({
+      permitido: false,
+      motivo: "um_degrau_por_vez",
+    });
+    const dois = await pedirCondicaoMelhor({ ...ctx, sourceJobId: "run-2" }, id, { objecao: "valor_total", oQueAPessoaDisse: "ainda caro" });
+    expect(dois).toMatchObject({ conseguiu: true, nova_oferta: { descontoPct: 6 } });
+    const cons = (await consultarDividas(ctx)) as { dividas: Array<{ ofertas: Array<{ descontoPct: number }> }> };
+    expect(cons.dividas[0]!.ofertas[0]!.descontoPct).toBe(6);
+    expect(await fecharAcordo(ctx, id, { forma: "a_vista", descontoPct: 6 }, "pix", "João")).toMatchObject({ permitido: true });
   });
 
   it("dívida de outra pessoa é fora_da_conversa", async () => {
@@ -183,5 +217,54 @@ describe("utilidades", () => {
   it("política inválida é erro, não chute", () => {
     expect(() => lerPolitica({ maxParcelas: -1 })).toThrow(/politica_invalida/);
     expect(lerPolitica({ maxParcelas: 6 }).maxParcelas).toBe(6);
+  });
+});
+
+describe("cuidado, identidade de 90 dias e memória do retorno", () => {
+  it("sinal de risco pausa toda a cobrança, traz a ajuda da cidade e barra o retorno automático", async () => {
+    await verificarIdentidade(ctx, "123");
+    await tabular(ctx, { desfecho: "retornar_contato", retornarEm: "2026-11-06T10:00:00-03:00" });
+    const r = await registrarCuidado(ctx, "não vê sentido em viver");
+    expect(r).toMatchObject({ permitido: true, cobranca_pausada: true, ajuda: { cidade: "Campinas/SP" } });
+    expect(JSON.stringify(r.ajuda)).toContain("188");
+    expect(r.ajuda.orientacao_local).toContain("Campinas/SP");
+    expect(estado.dividas[0]!.cuidado_em).not.toBeNull();
+    expect(estado.dividas[0]!.retornar_em).toBeNull();
+    expect(await consultarDividas(ctx)).toMatchObject({ permitido: false, motivo: "cobranca_pausada_por_cuidado" });
+    expect(await simularAcordo(ctx, DIVIDA, { forma: "a_vista" })).toMatchObject({ motivo: "cobranca_pausada_por_cuidado" });
+    expect(
+      await tabular(ctx, { desfecho: "retornar_contato", retornarEm: "2026-12-01T10:00:00-03:00" }),
+    ).toMatchObject({ motivo: "cobranca_pausada_por_cuidado" });
+  });
+
+  it("identidade vale 90 dias: dentro não pede de novo, depois volta a pedir", async () => {
+    await verificarIdentidade(ctx, "123");
+    const em80 = { ...ctx, agora: new Date(ctx.agora.getTime() + 80 * 86_400_000) };
+    expect(await consultarDividas(em80)).toMatchObject({ permitido: true });
+    const em95 = { ...ctx, agora: new Date(ctx.agora.getTime() + 95 * 86_400_000) };
+    expect(await consultarDividas(em95)).toMatchObject({ permitido: false, motivo: "identidade_nao_confirmada" });
+    expect(await verificarIdentidade(em95, "999")).toMatchObject({ status: "nao_confere" });
+    expect(await verificarIdentidade(em95, "123")).toMatchObject({ status: "verificado" });
+    expect(await consultarDividas(em95)).toMatchObject({ permitido: true });
+  });
+
+  it("o retorno guarda o que a pessoa contou e a nota lembra disso, sem pedir CPF", async () => {
+    await verificarIdentidade(ctx, "123");
+    await tabular(ctx, {
+      dividaId: DIVIDA,
+      desfecho: "retornar_contato",
+      retornarEm: "2026-11-09T10:00:00-03:00",
+      contexto: "perdeu a mãe e o emprego; espera receber um valor em janeiro",
+    });
+    const d = estado.dividas[0]!;
+    expect(d.contexto_do_retorno).toBe("perdeu a mãe e o emprego; espera receber um valor em janeiro");
+    expect(retornoVencido(d, new Date("2026-11-08T12:00:00-03:00"))).toBe(false);
+    const quando = new Date("2026-11-09T10:00:00-03:00");
+    expect(retornoVencido(d, quando)).toBe(true);
+    const nota = notaDoRetorno(d, quando, ctx.agora.toISOString());
+    expect(nota).toContain("perdeu a mãe e o emprego");
+    expect(nota).toContain("NÃO peça o CPF de novo");
+    // Passou de 90 dias: a nota manda confirmar antes de lembrar de qualquer coisa pessoal.
+    expect(notaDoRetorno(d, new Date("2027-03-01T10:00:00-03:00"), null)).toContain("expirou");
   });
 });

@@ -4,9 +4,11 @@
  * serviço de verdade e o guardrail de envio de verdade. Só o banco e o canal
  * são de mentira.
  */
+import { markdownParaWhatsapp } from "@/lib/agent-engine/texto/formatacao-whatsapp";
 import { pedidoDe } from "@/lib/mcp/tools/recuperacao";
 
 import { avaliarEnvioDeCobranca, type EstadoDaCobrancaNoEnvio } from "../../guardrail";
+import { identidadeVigente } from "../../identidade";
 import { ProvedorFake } from "../../pagamento/fake";
 import { POLITICA_PADRAO, diasDeAtraso, faixaVigente } from "../../politica";
 import { repositorioEmMemoria, type EstadoEmMemoria } from "../../repositorio";
@@ -14,7 +16,10 @@ import {
   consultarDividas,
   fecharAcordo,
   hojeLocal,
+  pedirCondicaoMelhor,
+  registrarCuidado,
   simularAcordo,
+  type Objecao,
   tabular,
   verificarIdentidade,
   type ContextoDeCobranca,
@@ -27,10 +32,13 @@ export const DIVIDA_DO_LAB = "d1a00000-0000-4000-8000-000000000001";
 export const AGORA_DO_LAB = new Date("2026-10-20T15:00:00Z");
 
 export interface Mensagem {
-  autor: "bella" | "devedor";
+  /** `sistema`: marca do simulador (o tempo avançou), não é fala de ninguém. */
+  autor: "bella" | "devedor" | "sistema";
   texto: string;
   /** Vetos do guardrail que a Bella levou antes de esta versão sair. */
   vetos: string[];
+  /** Data/hora simulada da mensagem (ISO). */
+  em?: string;
 }
 
 export interface Chamada {
@@ -50,6 +58,9 @@ export interface DividaDoAmbiente {
   vencimento: string;
   parcelasVencidas: number;
   cpfPrefixo: string;
+  /** Onde a pessoa mora (do cadastro do credor): os contatos de ajuda são os da região. */
+  cidade?: string;
+  uf?: string;
 }
 
 export const DIVIDA_PADRAO: DividaDoAmbiente = {
@@ -60,6 +71,8 @@ export const DIVIDA_PADRAO: DividaDoAmbiente = {
   vencimento: "2026-03-10",
   parcelasVencidas: 7,
   cpfPrefixo: "123",
+  cidade: "Campinas",
+  uf: "SP",
 };
 
 export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbiente = DIVIDA_PADRAO) {
@@ -90,6 +103,12 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbien
         identidade_bloqueada_ate: null,
         opt_out_em: null,
         retornar_em: null,
+        desconto_liberado_pct: null,
+        desconto_liberado_job: null,
+        devedor_cidade: divida.cidade ?? null,
+        devedor_uf: divida.uf ?? null,
+        contexto_do_retorno: null,
+        cuidado_em: null,
       },
     ],
     acordos: [],
@@ -117,6 +136,11 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbien
       motivo?: string;
       retornar_em?: string;
       total_aceito_reais?: number;
+      objecao?: Objecao;
+      o_que_a_pessoa_disse?: string;
+      total_proposto_reais?: number;
+      contexto?: string;
+      sinal?: string;
     };
     let resultado: unknown;
     switch (nome) {
@@ -128,6 +152,13 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbien
         break;
       case "cobranca_simular_acordo":
         resultado = await simularAcordo(ctx, a.divida_id, pedidoDe(a));
+        break;
+      case "cobranca_pedir_condicao_melhor":
+        resultado = await pedirCondicaoMelhor(ctx, a.divida_id, {
+          objecao: a.objecao ?? "outro",
+          oQueAPessoaDisse: String(a.o_que_a_pessoa_disse ?? ""),
+          totalPropostoCents: a.total_proposto_reais === undefined ? undefined : Math.round(a.total_proposto_reais * 100),
+        });
         break;
       case "cobranca_fechar_acordo":
         resultado = await fecharAcordo(
@@ -145,7 +176,11 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbien
           desfecho: a.desfecho,
           motivo: a.motivo ?? null,
           retornarEm: a.retornar_em ?? null,
+          contexto: a.contexto ?? null,
         });
+        break;
+      case "cobranca_registrar_cuidado":
+        resultado = await registrarCuidado(ctx, String(a.sinal ?? ""));
         break;
       case "crm_request_human_handoff":
         handoffs.push(String((args as { reason?: string; motivo?: string }).reason ?? a.motivo ?? ""));
@@ -165,12 +200,13 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbien
       POLITICA_PADRAO,
       diasDeAtraso(
         { id: d.id, credor: "", produto: "", saldoCents: d.valor_devido_cents, vencimentoOriginal: d.vencimento_original },
-        hojeLocal(agora),
+        hojeLocal(ctx.agora),
       ),
     );
     return {
-      identidadeConfirmada: d.identidade_verificada_em !== null,
+      identidadeConfirmada: identidadeVigente(d.identidade_verificada_em, ctx.agora),
       optOut: d.opt_out_em !== null,
+      cuidado: d.cuidado_em !== null,
       resposta,
       janela: { horaInicio: 8, horaFim: 20, dias: [1, 2, 3, 4, 5, 6], fuso: "America/Sao_Paulo" },
       descontoMaximoPct: faixa.descontoMaximoPct,
@@ -178,19 +214,50 @@ export function criarAmbiente(agora: Date = AGORA_DO_LAB, divida: DividaDoAmbien
     };
   }
 
-  /** Passa a mensagem da Bella pelo guardrail. Veto devolve o motivo; ok registra a mensagem. */
-  function tentarEnviar(texto: string, vetosAnteriores: string[], resposta = true): { ok: true } | { ok: false; code: string; reason: string } {
-    const veto = avaliarEnvioDeCobranca(texto, estadoDoEnvio(resposta), agora);
+  /**
+   * Passa a mensagem da Bella pelo envio de verdade: Markdown vira formatação do
+   * WhatsApp e o guardrail confere. Veto devolve o motivo; ok registra o texto
+   * que sairia no canal.
+   */
+  function tentarEnviar(
+    textoDoModelo: string,
+    vetosAnteriores: string[],
+    resposta = true,
+  ): { ok: true; texto: string } | { ok: false; code: string; reason: string } {
+    const texto = markdownParaWhatsapp(textoDoModelo);
+    const veto = avaliarEnvioDeCobranca(texto, estadoDoEnvio(resposta), ctx.agora);
     if (veto) return { ok: false, code: veto.code, reason: veto.reason };
-    conversa.push({ autor: "bella", texto, vetos: vetosAnteriores });
-    return { ok: true };
+    conversa.push({ autor: "bella", texto, vetos: vetosAnteriores, em: ctx.agora.toISOString() });
+    return { ok: true, texto };
   }
 
   function devedorDiz(texto: string) {
-    conversa.push({ autor: "devedor", texto, vetos: [] });
+    conversa.push({ autor: "devedor", texto, vetos: [], em: ctx.agora.toISOString() });
   }
 
-  return { divida, agora, estado, ctx, conversa, chamadas, handoffs, executar, tentarEnviar, devedorDiz, estadoDoEnvio };
+  /** O relógio da conversa anda (o simulador pula dias): banco, ferramentas e guardrail passam a ver a nova data. */
+  function avancarPara(nova: Date) {
+    if (nova.getTime() <= ctx.agora.getTime()) throw new Error("a nova data precisa ser depois da atual");
+    ctx.agora = nova;
+    conversa.push({ autor: "sistema", texto: `tempo avançado para ${nova.toISOString()}`, vetos: [], em: nova.toISOString() });
+  }
+
+  return {
+    divida,
+    get agora() {
+      return ctx.agora;
+    },
+    estado,
+    ctx,
+    conversa,
+    chamadas,
+    handoffs,
+    executar,
+    tentarEnviar,
+    devedorDiz,
+    estadoDoEnvio,
+    avancarPara,
+  };
 }
 
 export type Ambiente = ReturnType<typeof criarAmbiente>;

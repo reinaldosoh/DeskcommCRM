@@ -16,8 +16,11 @@ import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { provedorDePagamento } from "@/lib/recuperacao/pagamento/fake";
 import { repositorioSupabase } from "@/lib/recuperacao/repositorio";
 import {
+  OBJECOES,
   consultarDividas,
   fecharAcordo,
+  pedirCondicaoMelhor,
+  registrarCuidado,
   simularAcordo,
   tabular,
   verificarIdentidade,
@@ -106,8 +109,8 @@ export const cobrancaVerificarIdentidade: McpToolDefinition<typeof identidadeSha
 export const cobrancaConsultarDivida: McpToolDefinition<Record<string, never>> = {
   name: "cobranca_consultar_divida",
   description:
-    "Traz as dívidas em aberto da pessoa desta conversa, com valor atualizado e a escada de ofertas " +
-    "(à vista com desconto inicial, desconto máximo, parcelado). Sem identidade confirmada, devolve só " +
+    "Traz as dívidas em aberto da pessoa desta conversa, com valor atualizado e as ofertas de abertura " +
+    "(à vista com o desconto liberado e o parcelado mais leve). Sem identidade confirmada, devolve só " +
     "o nome do credor. Nunca invente ou arredonde um valor: repita o texto da oferta.",
   inputSchema: {},
   category: "read",
@@ -134,6 +137,41 @@ export const cobrancaSimularAcordo: McpToolDefinition<typeof pedidoShape> = {
     const c = contextoDe(ctx);
     if (!c) return SEM_CONVERSA;
     return simularAcordo(c, input.divida_id, pedidoDe(input));
+  },
+};
+
+const condicaoMelhorShape = {
+  divida_id: z.string().uuid().describe("A dívida, como veio em cobranca_consultar_divida."),
+  objecao: z
+    .enum(OBJECOES)
+    .describe("Por que a oferta à vista não serve: valor_total, parcela, momento, desconfianca ou outro."),
+  o_que_a_pessoa_disse: z
+    .string()
+    .min(3)
+    .max(300)
+    .describe("Em poucas palavras, a objeção nas palavras da pessoa (sem dado pessoal)."),
+  total_proposto_reais: reais.optional().describe("Se a pessoa disse quanto pagaria à vista, o valor em reais."),
+};
+
+export const cobrancaPedirCondicaoMelhor: McpToolDefinition<typeof condicaoMelhorShape> = {
+  name: "cobranca_pedir_condicao_melhor",
+  description:
+    "\"Deixa eu ver se consigo um pouco mais para você\": depois de ENTENDER por que a oferta à vista não serve, " +
+    "tenta uma condição um pouco melhor — um degrau só, nunca o máximo de uma vez. Uma chamada por resposta. " +
+    "Se não houver margem, devolve conseguiu=false: aí procure outro caminho, sem dizer que chegou a um limite.",
+  inputSchema: condicaoMelhorShape,
+  category: "write",
+  // Só o agente (token efêmero) alcança: nenhuma pessoa tem `ai_operator`.
+  requiresRole: "ai_operator",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    const c = contextoDe(ctx);
+    if (!c) return SEM_CONVERSA;
+    return pedirCondicaoMelhor(c, input.divida_id, {
+      objecao: input.objecao,
+      oQueAPessoaDisse: input.o_que_a_pessoa_disse,
+      totalPropostoCents: paraCents(input.total_proposto_reais),
+    });
   },
 };
 
@@ -178,6 +216,14 @@ const tabularShape = {
   divida_id: z.string().uuid().optional(),
   motivo: z.string().max(200).optional().describe("Motivo curto, sem dado pessoal (ex.: \"desempregado\")."),
   retornar_em: z.string().datetime({ offset: true }).optional().describe("Obrigatório em retornar_contato (ISO 8601)."),
+  contexto: z
+    .string()
+    .max(600)
+    .optional()
+    .describe(
+      "Em retornar_contato: o que a pessoa contou que importa na próxima conversa (motivo, o que espera que mude, " +
+        "o que foi combinado). Sem CPF nem valores.",
+    ),
 };
 
 export const cobrancaTabular: McpToolDefinition<typeof tabularShape> = {
@@ -200,6 +246,29 @@ export const cobrancaTabular: McpToolDefinition<typeof tabularShape> = {
       desfecho: input.desfecho,
       motivo: input.motivo ?? null,
       retornarEm: input.retornar_em ?? null,
+      contexto: input.contexto ?? null,
     });
+  },
+};
+
+const cuidadoShape = {
+  sinal: z.string().min(3).max(300).describe("O que a pessoa disse que indica risco, em poucas palavras."),
+};
+
+export const cobrancaRegistrarCuidado: McpToolDefinition<typeof cuidadoShape> = {
+  name: "cobranca_registrar_cuidado",
+  description:
+    "Use NA HORA se a pessoa falar em se machucar, em morrer ou em não ver sentido em viver. Pausa toda a " +
+    "cobrança dela (nada de valor nem retorno até um humano liberar) e devolve os contatos de ajuda da cidade " +
+    "da pessoa. Depois, passe para um humano com urgência.",
+  inputSchema: cuidadoShape,
+  category: "write",
+  // Só o agente (token efêmero) alcança: nenhuma pessoa tem `ai_operator`.
+  requiresRole: "ai_operator",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    const c = contextoDe(ctx);
+    if (!c) return SEM_CONVERSA;
+    return registrarCuidado(c, input.sinal);
   },
 };

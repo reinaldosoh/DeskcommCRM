@@ -17,11 +17,14 @@ import { z } from "zod";
 import {
   cobrancaConsultarDivida,
   cobrancaFecharAcordo,
+  cobrancaPedirCondicaoMelhor,
+  cobrancaRegistrarCuidado,
   cobrancaSimularAcordo,
   cobrancaTabular,
   cobrancaVerificarIdentidade,
 } from "@/lib/mcp/tools/recuperacao";
 
+import { notaDoRetorno, retornoVencido } from "../../retorno";
 import { playbookDaBella } from "../definicao";
 import { gerar, modeloDe, provedorDe } from "../simulador/modelos";
 import { criarAmbiente, type Ambiente, type DividaDoAmbiente } from "./ambiente";
@@ -38,8 +41,10 @@ function ferramentasDoLab(amb: Ambiente): ToolSet {
     cobrancaVerificarIdentidade,
     cobrancaConsultarDivida,
     cobrancaSimularAcordo,
+    cobrancaPedirCondicaoMelhor,
     cobrancaFecharAcordo,
     cobrancaTabular,
+    cobrancaRegistrarCuidado,
   ] as const;
   const tools: ToolSet = {};
   for (const d of defs) {
@@ -132,16 +137,18 @@ export class SessaoBella {
   readonly modeloBella: string;
   readonly modeloPersona: string;
   readonly uso: Uso = { entrada: 0, saida: 0, cache: 0 };
-  private readonly system: string;
+  private readonly playbook: string | undefined;
   private readonly tools: ToolSet;
   private readonly historico: ModelMessage[] = [{ role: "user", content: ABERTURA }];
-  private primeira = true;
+  /** A próxima mensagem da Bella é ATIVA (abertura ou retorno), não resposta. */
+  private ativa = true;
+  private vez = 0;
 
   constructor(opcoes: OpcoesDaSessao = {}) {
     this.amb = criarAmbiente(opcoes.agora, opcoes.divida);
     this.modeloBella = opcoes.modeloBella ?? process.env.BELLA_LAB_MODELO ?? MODELO_PADRAO_BELLA;
     this.modeloPersona = opcoes.modeloPersona ?? process.env.BELLA_LAB_MODELO_PERSONA ?? MODELO_PADRAO_PERSONA;
-    this.system = sistemaDaBella(this.amb.divida.nome, this.amb.agora, opcoes.playbook);
+    this.playbook = opcoes.playbook;
     this.tools = ferramentasDoLab(this.amb);
   }
 
@@ -154,15 +161,51 @@ export class SessaoBella {
   }
 
   private instrucoes(): SystemModelMessage {
+    // A data entra no sistema: quando o simulador avança o tempo, a Bella sabe que dia é.
+    const system = sistemaDaBella(this.amb.divida.nome, this.amb.agora, this.playbook);
     // Anthropic: o playbook é igual em todo turno — cache corta custo e latência.
     return provedorDe(this.modeloBella) === "anthropic"
-      ? { role: "system", content: this.system, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
-      : { role: "system", content: this.system };
+      ? { role: "system", content: system, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
+      : { role: "system", content: system };
+  }
+
+  /** Quando foi a última fala de alguém (antes de o tempo andar). */
+  private ultimaConversaEm(): string | null {
+    for (let i = this.amb.conversa.length - 1; i >= 0; i--) {
+      const m = this.amb.conversa[i]!;
+      if (m.autor !== "sistema" && m.em) return m.em;
+    }
+    return null;
+  }
+
+  /**
+   * O tempo passa (o simulador pula para `nova`). Se um retorno combinado venceu,
+   * a próxima vez da Bella é o RETORNO, ativa, com a nota do que a pessoa contou;
+   * senão, só a data muda e quem fala primeiro é a pessoa.
+   */
+  async avancarTempo(nova: Date): Promise<{ retorno: boolean }> {
+    const ultima = this.ultimaConversaEm();
+    this.amb.avancarPara(nova);
+    const d = this.amb.estado.dividas[0]!;
+    if (retornoVencido(d, nova)) {
+      this.historico.push({ role: "user", content: notaDoRetorno(d, nova, ultima) });
+      // O retorno foi feito: a data é consumida (a memória fica, para a conversa de agora).
+      await this.amb.ctx.repo.atualizarDivida(d.id, { retornar_em: null });
+      this.ativa = true;
+      return { retorno: true };
+    }
+    this.historico.push({
+      role: "user",
+      content: `[sistema] O tempo passou: hoje é ${agoraPorExtenso(nova)}. Espere a pessoa escrever.`,
+    });
+    return { retorno: false };
   }
 
   /** A Bella fala (abre a conversa ou responde ao que o devedor disse por último). */
   async vezDaBella(sinal?: AbortSignal): Promise<TurnoDaBella> {
     const t0 = Date.now();
+    // Cada vez da Bella é um run, como em produção (um job por mensagem recebida).
+    this.amb.ctx.sourceJobId = `lab-vez-${++this.vez}`;
     const uso: Uso = { entrada: 0, saida: 0, cache: 0 };
     const vetos: TurnoDaBella["vetos"] = [];
     const fim = (texto: string | null, travou: TurnoDaBella["travou"], erro?: string): TurnoDaBella => ({
@@ -187,10 +230,10 @@ export class SessaoBella {
         this.historico.push(...(r.responseMessages as ModelMessage[]));
         const texto = r.text.trim();
         if (!texto) return fim(null, "muda");
-        const envio = this.amb.tentarEnviar(texto, vetos.map((v) => v.code), !this.primeira);
+        const envio = this.amb.tentarEnviar(texto, vetos.map((v) => v.code), !this.ativa);
         if (envio.ok) {
-          this.primeira = false;
-          return fim(texto, null);
+          this.ativa = false;
+          return fim(envio.texto, null);
         }
         vetos.push({ code: envio.code, texto });
         this.historico.push({ role: "user", content: `[sistema] mensagem NÃO enviada: ${envio.reason}` });
@@ -203,6 +246,7 @@ export class SessaoBella {
 
   /** O devedor (gente ou persona) fala. */
   devedorDiz(texto: string) {
+    this.ativa = false;
     this.amb.devedorDiz(texto);
     this.historico.push({ role: "user", content: texto });
   }
@@ -215,10 +259,11 @@ export class SessaoBella {
         "Você está numa conversa de WhatsApp com uma empresa de cobrança. Responda como no WhatsApp: curto, " +
         "informal, uma mensagem só, sem aspas e sem narrar ações. Nunca saia do personagem. Quando a conversa " +
         "tiver terminado (você encerrou, ou não há mais nada a dizer), responda exatamente FIM.",
-      messages: this.amb.conversa.map((m) => ({
-        role: m.autor === "bella" ? ("user" as const) : ("assistant" as const),
-        content: m.texto,
-      })),
+      messages: this.amb.conversa.map((m) =>
+        m.autor === "sistema"
+          ? { role: "user" as const, content: `[${agoraPorExtenso(new Date(m.em!))}: alguns dias se passaram desde a última mensagem]` }
+          : { role: m.autor === "bella" ? ("user" as const) : ("assistant" as const), content: m.texto },
+      ),
       abortSignal: sinal,
       maxRetries: 3,
     });
@@ -248,7 +293,10 @@ export async function conversarComModelo(cenario: Cenario, opcoes: OpcoesDoMotor
 
 /** Juiz por modelo: tom e empatia, que regra fixa não mede. Nota de 1 a 5 por item. */
 export async function julgarTom(amb: Ambiente, modeloId?: string) {
-  const conversa = amb.conversa.map((m) => `${m.autor === "bella" ? "BELLA" : "DEVEDOR"}: ${m.texto}`).join("\n");
+  const conversa = amb.conversa
+    .filter((m) => m.autor !== "sistema")
+    .map((m) => `${m.autor === "bella" ? "BELLA" : "DEVEDOR"}: ${m.texto}`)
+    .join("\n");
   const r = await gerar(modeloId ?? process.env.BELLA_LAB_MODELO_PERSONA ?? MODELO_PADRAO_PERSONA, {
     system:
       "Você avalia conversas de negociação de dívida por WhatsApp. Responda SÓ um JSON " +

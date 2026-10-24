@@ -23,6 +23,20 @@ describe("guardrail de cobrança", () => {
     expect(veto("Assim que o pagamento cair, vou processar a baixa.")).toBeNull();
   });
 
+  it("recusar o parcelamento pedido não é oferecer: \"não consegui em 24 vezes\" passa", () => {
+    expect(veto("João, não consegui em 24 vezes. O que tenho é entrada de R$ 188,49 + 11x de R$ 325,57.")).toBeNull();
+    expect(veto("Em 24 vezes não dá, mas em 12x fica R$ 325,57.")).toBeNull();
+    expect(veto("Faço em 24 vezes de R$ 160,00.")).toBe("cobranca_acima_da_politica");
+    expect(veto("Consigo em 24x sem entrada.")).toBe("cobranca_acima_da_politica");
+  });
+
+  it("cobrança pausada por cuidado: acolher passa; valor, acordo e mensagem ativa não", () => {
+    expect(veto("Sinto muito. Você pode ligar para o CVV, no 188, a qualquer hora.", { cuidado: true })).toBeNull();
+    expect(veto("Consigo R$ 3.581,27 à vista.", { cuidado: true })).toBe("cobranca_pausada_por_cuidado");
+    expect(veto("Quando quiser, a gente fecha o acordo.", { cuidado: true })).toBe("cobranca_pausada_por_cuidado");
+    expect(veto("Oi, João, tudo bem?", { cuidado: true, resposta: false })).toBe("cobranca_pausada_por_cuidado");
+  });
+
   it("valor antes da identidade é vetado; pedir o CPF não é", () => {
     expect(veto("Sua dívida é de R$ 3.769,76.", { identidadeConfirmada: false })).toBe("cobranca_valor_antes_da_identidade");
     expect(veto("O saldo está em 3.769,76", { identidadeConfirmada: false })).toBe("cobranca_valor_antes_da_identidade");
