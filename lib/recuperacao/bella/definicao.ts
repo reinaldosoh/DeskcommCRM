@@ -14,13 +14,15 @@ export function playbookDaBella(): string {
   return readFileSync(PLAYBOOK_DA_BELLA_PATH, "utf8");
 }
 
-/** As ferramentas da Bella: as cinco de cobrança e a passagem para humano. */
+/** As ferramentas da Bella: as de cobrança e a passagem para humano. */
 export const FERRAMENTAS_DA_BELLA = [
   "cobranca_verificar_identidade",
   "cobranca_consultar_divida",
   "cobranca_simular_acordo",
+  "cobranca_pedir_condicao_melhor",
   "cobranca_fechar_acordo",
   "cobranca_tabular",
+  "cobranca_registrar_cuidado",
   "crm_request_human_handoff",
 ] as const;
 
@@ -36,7 +38,7 @@ export function rascunhoDaBella(opcoes: {
 } = {}) {
   return {
     name: NOME_DA_AGENTE,
-    description: "Agente de negociação de dívidas da Pacare: confirma identidade, negocia dentro da política e envia o pagamento na hora.",
+    description: "Agente de negociação de dívidas da Ruios: confirma identidade, negocia dentro da política e envia o pagamento na hora.",
     version: {
       system_prompt: playbookDaBella(),
       provider: opcoes.provider ?? "anthropic",

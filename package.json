@@ -31,6 +31,7 @@
     "lint:channels": "tsx scripts/lint-channels.ts",
     "lint:role-rank": "tsx scripts/lint-role-rank.ts",
     "bella:lab": "tsx scripts/bella-lab.ts",
+    "bella:sim": "tsx --env-file-if-exists=.env.local scripts/bella-simulador.ts",
     "bella:semear": "tsx --env-file-if-exists=.env.local scripts/bella-semear.ts",
     "checar:colisao-de-migration": "bash scripts/checar-colisao-de-migration.sh",
     "skills:sync": "tsx scripts/sincronizar-skills.ts",

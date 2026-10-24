@@ -55,6 +55,8 @@ import { crmGetHonorariosContrato, crmListHonorariosParcelas } from "./honorario
 import {
   cobrancaConsultarDivida,
   cobrancaFecharAcordo,
+  cobrancaPedirCondicaoMelhor,
+  cobrancaRegistrarCuidado,
   cobrancaSimularAcordo,
   cobrancaTabular,
   cobrancaVerificarIdentidade,
@@ -153,8 +155,10 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmGetHumanCase,
   // write
   cobrancaVerificarIdentidade,
+  cobrancaPedirCondicaoMelhor,
   cobrancaFecharAcordo,
   cobrancaTabular,
+  cobrancaRegistrarCuidado,
   // A que consulta E marca numa chamada só vem primeiro: quando o cliente já deu
   // dia e hora, é o caminho curto, e é o que evita o turno morrer no meio (#831).
   crmFindAndBookAppointment,

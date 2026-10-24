@@ -33,6 +33,17 @@ export interface DividaRow {
   identidade_bloqueada_ate: string | null;
   opt_out_em: string | null;
   retornar_em: string | null;
+  /** Desconto à vista já liberado nesta negociação (null = o inicial da faixa). */
+  desconto_liberado_pct: number | null;
+  /** O run que liberou o último degrau: um degrau por vez da pessoa falar. */
+  desconto_liberado_job: string | null;
+  /** Cidade e UF do devedor (do cadastro do credor): os contatos de ajuda são os da região. */
+  devedor_cidade: string | null;
+  devedor_uf: string | null;
+  /** O que a pessoa contou e importa no retorno ("perdeu o emprego, recebe em janeiro"). */
+  contexto_do_retorno: string | null;
+  /** Sinal de risco à vida: a cobrança para até um humano liberar. */
+  cuidado_em: string | null;
 }
 
 export interface NovoAcordo {
@@ -80,6 +91,10 @@ export type AtualizacaoDeDivida = Partial<
     | "identidade_bloqueada_ate"
     | "opt_out_em"
     | "retornar_em"
+    | "desconto_liberado_pct"
+    | "desconto_liberado_job"
+    | "contexto_do_retorno"
+    | "cuidado_em"
   > & { ultimo_desfecho: Desfecho }
 >;
 
@@ -105,7 +120,8 @@ export function repositorioSupabase(supabase: SupabaseClient, organizationId: st
         .select(
           "id, carteira_id, contact_id, produto, valor_devido_cents, vencimento_original, parcelas_vencidas, " +
             "cpf_prefixo, status, identidade_tentativas, identidade_verificada_em, identidade_bloqueada_ate, " +
-            "opt_out_em, retornar_em",
+            "opt_out_em, retornar_em, desconto_liberado_pct, desconto_liberado_job, devedor_cidade, devedor_uf, " +
+            "contexto_do_retorno, cuidado_em",
         )
         .eq("organization_id", organizationId)
         .eq("contact_id", contactId)

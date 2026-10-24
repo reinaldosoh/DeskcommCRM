@@ -36,12 +36,32 @@ export const TOOLS_RECUPERACAO = declararTools([
     pacotes: ["cobrar"],
   },
   {
+    name: "cobranca_pedir_condicao_melhor",
+    category: "write",
+    rotulo: "Melhorar a condição à vista, aos poucos",
+    explicacao:
+      "Depois de entender a objeção, sobe o desconto à vista um degrau por vez (o passo da política), sem nunca mostrar o máximo.",
+    oQueToca: "Dívidas da carteira",
+    risco: "atencao",
+    pacotes: ["cobrar"],
+  },
+  {
     name: "cobranca_fechar_acordo",
     category: "write",
     rotulo: "Fechar o acordo e gerar o pagamento",
     explicacao:
       "Registra o acordo aceito pelo devedor e gera na hora o PIX ou boleto da primeira parcela (de teste durante a validação).",
     oQueToca: "Acordos e cobranças",
+    risco: "atencao",
+    pacotes: ["cobrar"],
+  },
+  {
+    name: "cobranca_registrar_cuidado",
+    category: "write",
+    rotulo: "Pausar a cobrança por risco à vida",
+    explicacao:
+      "Quando a pessoa fala em se machucar ou em não querer viver, para toda a cobrança dela até um humano liberar e traz os contatos de ajuda da região.",
+    oQueToca: "Dívidas da carteira",
     risco: "atencao",
     pacotes: ["cobrar"],
   },

@@ -29,7 +29,7 @@ export interface Cenario {
   };
 }
 
-const TITULAR = "Você é João Carlos, 41 anos, deve R$ 3.769,76 no cartão do Banco Nova Era desde março. ";
+export const TITULAR = "Você é João Carlos, 41 anos, deve R$ 3.769,76 no cartão do Banco Nova Era desde março. ";
 
 export const CENARIOS: readonly Cenario[] = [
   {

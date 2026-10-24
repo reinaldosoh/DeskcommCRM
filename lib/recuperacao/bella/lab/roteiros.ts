@@ -41,7 +41,7 @@ export async function executarRoteiro(passos: readonly Passo[]): Promise<Ambient
   return { ...amb, vetos };
 }
 
-const ABERTURA = "Oi, João! Aqui é a Bella, da Pacare, sobre uma pendência com o Banco Nova Era. " +
+const ABERTURA = "Oi, João! Aqui é a Bella, da Ruios, sobre uma pendência com o Banco Nova Era. " +
   "Para proteger seus dados, me confirma os 3 primeiros dígitos do seu CPF?";
 
 export const ROTEIROS: Record<string, readonly Passo[]> = {
@@ -92,7 +92,7 @@ export const ROTEIROS: Record<string, readonly Passo[]> = {
     { devedor: "como conseguiram meu número? isso é golpe?" },
     {
       bella:
-        "Entendo a preocupação! O credor, Banco Nova Era, contratou a Pacare para negociar a pendência e usa o contato " +
+        "Entendo a preocupação! O credor, Banco Nova Era, contratou a Ruios para negociar a pendência e usa o contato " +
         "do seu cadastro. Eu nunca peço senha nem o CPF inteiro, e você pode confirmar direto com o credor.",
     },
     { devedor: "ok, 123. vou pensar" },
@@ -133,9 +133,10 @@ export const ROTEIROS: Record<string, readonly Passo[]> = {
     { devedor: "só pago com 50% de desconto" },
     { ferramenta: "cobranca_simular_acordo", args: { forma: "a_vista", desconto_pct: 50 } },
     { bella: "Faço com 50% de desconto!" }, // vetado pelo guardrail — a Bella reescreve:
-    { bella: "Entendo. O melhor que consigo à vista é R$ 3.392,78 (10% de desconto) até 26/10." },
+    // A contraproposta é a condição liberada (5%), nunca o teto da faixa de uma vez.
+    { bella: "Entendo. À vista consigo R$ 3.581,27 (5% de desconto) até 26/10. O que pesa mais para você?" },
     { devedor: "ok, manda boleto" },
-    { ferramenta: "cobranca_fechar_acordo", args: { forma: "a_vista", desconto_pct: 10, meio: "boleto" } },
+    { ferramenta: "cobranca_fechar_acordo", args: { forma: "a_vista", desconto_pct: 5, meio: "boleto" } },
     { bella: "Fechado! Boleto DE TESTE (validação), não pague. Linha digitável: {{pagamento}}" },
   ],
 };

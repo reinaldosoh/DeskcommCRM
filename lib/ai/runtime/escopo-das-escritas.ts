@@ -102,8 +102,10 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   // O serviço também recusa dívida de outro contato; a ponte confere antes, como
   // em toda escrita do turno.
   cobranca_verificar_identidade: {},
+  cobranca_pedir_condicao_melhor: { divida_id: "divida" },
   cobranca_fechar_acordo: { divida_id: "divida" },
   cobranca_tabular: { divida_id: "divida" },
+  cobranca_registrar_cuidado: {},
 
   // ---- sem registro de cliente ----
   crm_save_org_memory: {},

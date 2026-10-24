@@ -11,6 +11,15 @@
 export const DIGITOS_CONFERIDOS = 3;
 export const MAX_TENTATIVAS = 3;
 export const BLOQUEIO_MINUTOS = 60;
+/** Identidade confirmada vale por 90 dias no mesmo número: o retorno não pede o CPF de novo. */
+export const VALIDADE_DA_IDENTIDADE_DIAS = 90;
+
+/** A confirmação ainda vale em `agora`? */
+export function identidadeVigente(verificadoEm: string | Date | null | undefined, agora: Date): boolean {
+  if (!verificadoEm) return false;
+  const em = new Date(verificadoEm).getTime();
+  return agora.getTime() - em < VALIDADE_DA_IDENTIDADE_DIAS * 86_400_000;
+}
 
 export function somenteDigitos(texto: string): string {
   return texto.replace(/\D/g, "");
@@ -60,11 +69,11 @@ export function registrarTentativa(
   resposta: string,
   agora: Date,
 ): ResultadoDaTentativa {
-  if (estado.verificadoEm) return { status: "verificado", estado };
+  if (identidadeVigente(estado.verificadoEm, agora)) return { status: "verificado", estado };
   if (estaBloqueado(estado, agora)) return { status: "bloqueado", ate: estado.bloqueadoAte!, estado };
 
-  // Bloqueio vencido: recomeça a contagem.
-  const base = estado.bloqueadoAte ? { ...ESTADO_INICIAL } : estado;
+  // Bloqueio vencido ou confirmação expirada: recomeça a contagem.
+  const base = estado.bloqueadoAte || estado.verificadoEm ? { ...ESTADO_INICIAL } : estado;
   const c = conferirPrefixoCpf(cpfCadastrado, resposta);
   if (c === "resposta_invalida") return { status: "resposta_invalida", estado: base };
   if (c === "confere") {

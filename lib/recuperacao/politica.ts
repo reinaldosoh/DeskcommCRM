@@ -28,6 +28,7 @@ export const POLITICA_PADRAO: PoliticaDeNegociacao = {
   parcelaMinimaCents: 5000,
   prazoPrimeiroPagamentoDias: 6,
   descontoNoParceladoPct: 0,
+  passoDescontoPct: 0.5,
 };
 
 const MS_POR_DIA = 86_400_000;
@@ -104,6 +105,7 @@ export type MotivoDeRecusa =
   | "entrada_acima_do_total"
   | "parcela_abaixo_do_minimo"
   | "desconto_acima_do_maximo"
+  | "desconto_nao_liberado"
   | "valor_abaixo_do_permitido";
 
 /**
@@ -200,31 +202,50 @@ export function avaliarPedido(
   politica: PoliticaDeNegociacao,
   hoje: Date,
   pedido: PedidoDoDevedor,
+  /**
+   * O desconto à vista já liberado NESTA negociação (veja `proximoDegrauAVista`);
+   * `null` = nada liberado ainda (vale o inicial da faixa). Omitido = o teto da
+   * faixa — quem negocia com a pessoa sempre passa o liberado, para a
+   * contraproposta nunca entregar o máximo de uma vez.
+   */
+  liberadoPct?: number | null,
 ): Avaliacao {
   const faixa = faixaVigente(politica, diasDeAtraso(divida, hoje));
 
   if (pedido.forma === "a_vista") {
-    const melhor = propostaAVista(divida, politica, hoje, faixa.descontoMaximoPct);
+    const teto = liberadoPct === undefined ? faixa.descontoMaximoPct : descontoLiberado(faixa, liberadoPct);
+    const melhor = propostaAVista(divida, politica, hoje, teto);
     if (pedido.totalDesejadoCents !== undefined && pedido.totalDesejadoCents < melhor.totalCents) {
       return {
         aceitavel: false,
         motivo: "valor_abaixo_do_permitido",
-        detalhe: "o valor pedido fica abaixo do mínimo autorizado para pagamento à vista",
+        detalhe:
+          teto < faixa.descontoMaximoPct
+            ? "o valor pedido fica abaixo da condição liberada até agora"
+            : "o valor pedido fica abaixo do mínimo autorizado para pagamento à vista",
         contraproposta: melhor,
       };
     }
-    if (pedido.descontoPct !== undefined && pedido.descontoPct > faixa.descontoMaximoPct) {
-      return {
-        aceitavel: false,
-        motivo: "desconto_acima_do_maximo",
-        detalhe: `o desconto máximo autorizado é de ${faixa.descontoMaximoPct}%`,
-        contraproposta: melhor,
-      };
+    if (pedido.descontoPct !== undefined && pedido.descontoPct > teto) {
+      return teto < faixa.descontoMaximoPct
+        ? {
+            aceitavel: false,
+            motivo: "desconto_nao_liberado",
+            detalhe: `a condição liberada até agora é de ${pctBR(teto)} de desconto`,
+            contraproposta: melhor,
+          }
+        : {
+            aceitavel: false,
+            motivo: "desconto_acima_do_maximo",
+            detalhe: `o desconto máximo autorizado é de ${pctBR(teto)}`,
+            contraproposta: melhor,
+          };
     }
     const pct =
       pedido.totalDesejadoCents !== undefined
         ? // floor: o total resultante nunca fica ABAIXO do que o devedor ofereceu.
-          Math.max(0, Math.floor(((divida.saldoCents - pedido.totalDesejadoCents) / divida.saldoCents) * 100))
+          // Em centésimos de ponto: com passo de 0,5, "pago o valor de 5,5%" não pode virar 5%.
+          Math.max(0, Math.floor(((divida.saldoCents - pedido.totalDesejadoCents) / divida.saldoCents) * 10_000) / 100)
         : pedido.descontoPct;
     return { aceitavel: true, proposta: propostaAVista(divida, politica, hoje, pct) };
   }
@@ -264,20 +285,80 @@ export function melhorParceladoPossivel(
   return propostaAVista(divida, politica, hoje);
 }
 
+/** "5,5%" — percentual como se escreve no Brasil. */
+export function pctBR(pct: number): string {
+  return `${String(Math.round(pct * 100) / 100).replace(".", ",")}%`;
+}
+
+/** O desconto à vista em vigor: o liberado na negociação, preso entre o inicial e o teto da faixa. */
+export function descontoLiberado(faixa: FaixaDeDesconto, liberadoPct: number | null | undefined): number {
+  const base = liberadoPct ?? faixa.descontoInicialPct;
+  return Math.min(faixa.descontoMaximoPct, Math.max(faixa.descontoInicialPct, base));
+}
+
+export type Degrau =
+  | { esgotado: false; descontoPct: number; proposta: Proposta; alcancaOProposto: boolean | null }
+  | { esgotado: true; descontoPct: number };
+
 /**
- * A escada de ofertas, na ordem em que a Bella deve apresentá-las: à vista com
- * o desconto inicial, à vista com o desconto máximo, e o parcelamento mais leve.
- * Degraus repetidos (faixa sem desconto) são removidos.
+ * O PRÓXIMO degrau do desconto à vista — e só ele. É assim que a negociação
+ * sobe de pouco em pouco (5% → 5,5% → 6%...) em vez de saltar do inicial para
+ * o teto: quem chama nunca enxerga o máximo, só o passo seguinte.
+ *
+ * Com `totalPropostoCents` ("pago R$ 3.400"), o degrau para no MENOR desconto
+ * que chega nesse valor, se ele couber no passo; senão, sobe um passo só e
+ * diz que ainda não alcança.
+ */
+export function proximoDegrauAVista(
+  divida: Divida,
+  politica: PoliticaDeNegociacao,
+  hoje: Date,
+  liberadoPct: number | null | undefined,
+  totalPropostoCents?: number,
+): Degrau {
+  const faixa = faixaVigente(politica, diasDeAtraso(divida, hoje));
+  const atual = descontoLiberado(faixa, liberadoPct);
+  const passo = politica.passoDescontoPct > 0 ? politica.passoDescontoPct : 0.5;
+  if (atual >= faixa.descontoMaximoPct) return { esgotado: true, descontoPct: atual };
+
+  let pct = Math.min(faixa.descontoMaximoPct, arredondarPct(atual + passo));
+  let alcancaOProposto: boolean | null = null;
+  if (totalPropostoCents !== undefined) {
+    // Menor desconto (na grade do passo) cujo total fica dentro do que a pessoa propôs.
+    const necessario = ((divida.saldoCents - totalPropostoCents) / divida.saldoCents) * 100;
+    const naGrade = arredondarPct(Math.ceil(necessario / passo - 1e-9) * passo);
+    if (naGrade <= atual) {
+      pct = atual;
+      alcancaOProposto = true;
+    } else if (naGrade <= pct) {
+      pct = naGrade;
+      alcancaOProposto = true;
+    } else {
+      alcancaOProposto = false;
+    }
+  }
+  return { esgotado: false, descontoPct: pct, proposta: propostaAVista(divida, politica, hoje, pct), alcancaOProposto };
+}
+
+function arredondarPct(x: number): number {
+  return Math.round(x * 100) / 100;
+}
+
+/**
+ * As ofertas de abertura, na ordem em que a Bella deve apresentá-las: à vista
+ * com o desconto liberado (de início, o inicial da faixa) e o parcelamento mais
+ * leve. O teto da faixa NÃO entra: desconto maior só sai, passo a passo, de
+ * `proximoDegrauAVista`. Degraus repetidos são removidos.
  */
 export function escadaDeOfertas(
   divida: Divida,
   politica: PoliticaDeNegociacao,
   hoje: Date,
+  liberadoPct?: number | null,
 ): Proposta[] {
   const faixa = faixaVigente(politica, diasDeAtraso(divida, hoje));
   const degraus = [
-    propostaAVista(divida, politica, hoje, faixa.descontoInicialPct),
-    propostaAVista(divida, politica, hoje, faixa.descontoMaximoPct),
+    propostaAVista(divida, politica, hoje, descontoLiberado(faixa, liberadoPct)),
     melhorParceladoPossivel(divida, politica, hoje),
   ];
   const vistos = new Set<string>();

@@ -76,9 +76,11 @@ import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabil
 import { isWindowOpen } from './messaging-window';
 import type { ChannelProvider } from '@/lib/channels/capabilities';
 import { aplicarAjustesDeEstilo, lerAjustesDeEstiloDaOrg } from './ajustes-de-estilo-da-org';
+import { markdownParaWhatsapp } from '../texto/formatacao-whatsapp';
 import type { AjusteDeEstilo, LeituraDosAjustes } from './ajustes-de-estilo-da-org';
 import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
 import { avaliarEnvioDeCobranca, type EstadoDaCobrancaNoEnvio } from '@/lib/recuperacao/guardrail';
+import { identidadeVigente } from '@/lib/recuperacao/identidade';
 import { diasDeAtraso, faixaVigente } from '@/lib/recuperacao/politica';
 import { hojeLocal, lerPolitica } from '@/lib/recuperacao/servico';
 
@@ -1289,8 +1291,11 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
   // somente no re-run do fail-safe do próprio modelo. A PRESENÇA, portanto, é
   // o marcador estável de "este corpo foi escrito pela IA" sem fazer template,
   // resposta aprovada ou aviso de código passarem por uma preferência de estilo.
-  const bodyDoModelo =
+  const bodyComEstilo =
     estilo !== null ? aplicarAjustesDeEstilo(args.body, estilo.ajustes) : args.body;
+  // Markdown do modelo (`**x**`, `# título`) chega cru no WhatsApp: converte para
+  // a marcação do canal. Só no texto da IA, pelo mesmo marcador do estilo.
+  const bodyDoModelo = estilo !== null ? markdownParaWhatsapp(bodyComEstilo) : bodyComEstilo;
 
   // ═══ A CONFERÊNCIA SEMÂNTICA DE PROMESSA RODA FORA DO LOCK ═══
   //
@@ -1464,7 +1469,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // Reescrever o texto do modelo sem deixar rastro é mudar o que o cliente lê
     // sem ninguém poder auditar depois. A linha entra ANTES da cadeia porque a
     // reescrita acontece antes dela, e leva só rótulos — nunca o corpo (sem PII).
-    const trace: GateTraceEntry[] = [...rastroDoEstilo(estilo, args.body, bodyDoModelo), ...traceDaCadeia];
+    const trace: GateTraceEntry[] = [...rastroDoEstilo(estilo, args.body, bodyComEstilo), ...traceDaCadeia];
     ctx.body = evaluatedBody;
     emitTrace(args.log, args.channelSessionId, trace);
     // Auditoria DURÁVEL por run (F4-08 acceptance 3): escrita autônoma (pool, fora da tx
@@ -1646,13 +1651,14 @@ async function lerEstadoDaCobranca(
     valor_devido_cents: string;
     identidade_verificada_em: Date | null;
     opt_out_em: Date | null;
+    cuidado_em: Date | null;
     politica: unknown;
     contato_hora_inicio: number;
     contato_hora_fim: number;
     contato_dias: number[];
   }>(
     `select to_char(d.vencimento_original, 'YYYY-MM-DD') as vencimento_original, d.valor_devido_cents,
-            d.identidade_verificada_em, d.opt_out_em,
+            d.identidade_verificada_em, d.opt_out_em, d.cuidado_em,
             c.politica, c.contato_hora_inicio, c.contato_hora_fim, c.contato_dias
        from recuperacao_dividas d
        join recuperacao_carteiras c on c.id = d.carteira_id and c.organization_id = d.organization_id
@@ -1681,8 +1687,9 @@ async function lerEstadoDaCobranca(
   }
   const janela = rows[0]!;
   return {
-    identidadeConfirmada: rows.some((r) => r.identidade_verificada_em !== null),
+    identidadeConfirmada: rows.some((r) => identidadeVigente(r.identidade_verificada_em, now)),
     optOut: rows.some((r) => r.opt_out_em !== null),
+    cuidado: rows.some((r) => r.cuidado_em !== null),
     ...(resposta !== undefined ? { resposta } : {}),
     janela: {
       horaInicio: janela.contato_hora_inicio,

@@ -19,13 +19,16 @@ function reais(cents: number): string {
   return formatCentsBRL(cents).replace(/\u00a0/g, " ");
 }
 
-import { ESTADO_INICIAL, registrarTentativa, type EstadoDeIdentidade } from "./identidade";
+import { recursosDeAjuda } from "./cuidado";
+import { identidadeVigente, registrarTentativa, type EstadoDeIdentidade } from "./identidade";
 import type { ProvedorDePagamento } from "./pagamento/tipos";
 import {
   POLITICA_PADRAO,
   avaliarPedido,
   diasDeAtraso,
   escadaDeOfertas,
+  pctBR,
+  proximoDegrauAVista,
   type PedidoDoDevedor,
 } from "./politica";
 import type { CarteiraRow, DividaRow, RepositorioDeRecuperacao } from "./repositorio";
@@ -56,6 +59,7 @@ const politicaSchema = z
       )
       .min(1),
     maxParcelas: z.number().int().min(1).max(120),
+    passoDescontoPct: z.number().min(0.1).max(10),
     entradaMinimaPct: z.number().min(0).max(100),
     parcelaMinimaCents: z.number().int().min(0),
     prazoPrimeiroPagamentoDias: z.number().int().min(0).max(60),
@@ -83,7 +87,7 @@ function dataBR(iso: string): string {
 
 export function descreverProposta(p: Proposta): string {
   if (p.forma === "a_vista") {
-    const desc = p.descontoPct > 0 ? ` (${p.descontoPct}% de desconto)` : "";
+    const desc = p.descontoPct > 0 ? ` (${pctBR(p.descontoPct)} de desconto)` : "";
     return `${reais(p.totalCents)} à vista${desc}, para pagar até ${dataBR(p.primeiroVencimento)}`;
   }
   return (
@@ -113,6 +117,11 @@ function estadoDe(d: DividaRow): EstadoDeIdentidade {
 
 const ABERTAS: ReadonlyArray<DividaRow["status"]> = ["aberta", "em_acordo"];
 
+/** O desconto já liberado na negociação (o banco devolve `numeric` como texto). */
+function liberadoDe(d: DividaRow): number | null {
+  return d.desconto_liberado_pct === null || d.desconto_liberado_pct === undefined ? null : Number(d.desconto_liberado_pct);
+}
+
 // ---------------------------------------------------------------------------
 // identidade
 // ---------------------------------------------------------------------------
@@ -140,7 +149,8 @@ export async function verificarIdentidade(ctx: ContextoDeCobranca, resposta: str
 
   // A identidade é da PESSOA: o estado vale para todas as dívidas dela.
   const estado = estadoDe(comCpf);
-  const r = registrarTentativa(estado.verificadoEm ? estado : { ...ESTADO_INICIAL, ...estado }, comCpf.cpf_prefixo, resposta, ctx.agora);
+  const vigente = identidadeVigente(estado.verificadoEm, ctx.agora);
+  const r = registrarTentativa(estado, comCpf.cpf_prefixo, resposta, ctx.agora);
   for (const d of dividas) {
     await ctx.repo.atualizarDivida(d.id, {
       identidade_tentativas: r.estado.tentativas,
@@ -151,7 +161,7 @@ export async function verificarIdentidade(ctx: ContextoDeCobranca, resposta: str
 
   switch (r.status) {
     case "verificado":
-      if (!estado.verificadoEm) {
+      if (!vigente) {
         await tabular(ctx, { dividaId: comCpf.id, desfecho: "identidade_confirmada" });
       }
       return { status: "verificado", mensagem: "identidade confirmada — pode consultar a dívida e falar de valores" };
@@ -172,8 +182,9 @@ export async function verificarIdentidade(ctx: ContextoDeCobranca, resposta: str
   }
 }
 
-function identidadeOk(dividas: DividaRow[]): boolean {
-  return dividas.some((d) => d.identidade_verificada_em !== null);
+/** Confirmada nos últimos 90 dias (`VALIDADE_DA_IDENTIDADE_DIAS`): o retorno não pede o CPF de novo. */
+function identidadeOk(dividas: DividaRow[], agora: Date): boolean {
+  return dividas.some((d) => identidadeVigente(d.identidade_verificada_em, agora));
 }
 
 // ---------------------------------------------------------------------------
@@ -192,11 +203,24 @@ const FORA_DA_CONVERSA = {
   mensagem: "esta dívida não é da pessoa desta conversa — siga com quem está falando",
 };
 
+const PAUSADA_POR_CUIDADO = {
+  permitido: false as const,
+  motivo: "cobranca_pausada_por_cuidado" as const,
+  mensagem:
+    "a cobrança desta pessoa está pausada por um sinal de risco à vida. Não fale de dívida, valor nem retorno: " +
+    "acolha, reforce os contatos de ajuda e diga que um atendente vai continuar",
+};
+
+function emCuidado(dividas: DividaRow[]): boolean {
+  return dividas.some((d) => d.cuidado_em !== null && d.cuidado_em !== undefined);
+}
+
 export async function consultarDividas(ctx: ContextoDeCobranca) {
   const todas = await ctx.repo.dividasDoContato(ctx.contatoId);
+  if (emCuidado(todas)) return PAUSADA_POR_CUIDADO;
   const abertas = todas.filter((d) => ABERTAS.includes(d.status));
   if (abertas.length === 0) return { permitido: true as const, dividas: [], mensagem: "nenhuma pendência em aberto" };
-  if (!identidadeOk(todas)) {
+  if (!identidadeOk(todas, ctx.agora)) {
     const credores = new Set<string>();
     for (const d of abertas) {
       const c = await ctx.repo.carteira(d.carteira_id);
@@ -223,7 +247,7 @@ export async function consultarDividas(ctx: ContextoDeCobranca) {
       acordo_ativo: acordo !== null,
       ofertas:
         d.status === "aberta"
-          ? escadaDeOfertas(divida, politica, hoje).map((p, i) => ({ ordem: i + 1, texto: descreverProposta(p), ...p }))
+          ? escadaDeOfertas(divida, politica, hoje, liberadoDe(d)).map((p, i) => ({ ordem: i + 1, texto: descreverProposta(p), ...p }))
           : [],
       limites: { max_parcelas: politica.maxParcelas },
     });
@@ -232,7 +256,9 @@ export async function consultarDividas(ctx: ContextoDeCobranca) {
     permitido: true as const,
     dividas,
     mensagem:
-      "apresente UMA oferta por vez, na ordem; só desça para a próxima se a pessoa recusar ou disser que não cabe",
+      "apresente UMA oferta por vez, na ordem; só desça para a próxima se a pessoa recusar ou disser que não cabe. " +
+      "Se o à vista não servir por causa do valor, entenda o porquê e use cobranca_pedir_condicao_melhor — " +
+      "um pouco de cada vez; nunca diga que existe um teto",
   };
 }
 
@@ -240,7 +266,8 @@ async function dividaDoContato(ctx: ContextoDeCobranca, dividaId: string) {
   const todas = await ctx.repo.dividasDoContato(ctx.contatoId);
   const d = todas.find((x) => x.id === dividaId);
   if (!d) return { erro: FORA_DA_CONVERSA };
-  if (!identidadeOk(todas)) return { erro: RECUSA_IDENTIDADE };
+  if (emCuidado(todas)) return { erro: PAUSADA_POR_CUIDADO };
+  if (!identidadeOk(todas, ctx.agora)) return { erro: RECUSA_IDENTIDADE };
   const carteira = await ctx.repo.carteira(d.carteira_id);
   if (!carteira) return { erro: FORA_DA_CONVERSA };
   return { d, carteira, divida: paraDivida(d, carteira), politica: lerPolitica(carteira.politica) };
@@ -252,7 +279,7 @@ export async function simularAcordo(ctx: ContextoDeCobranca, dividaId: string, p
   if (r.d.status !== "aberta") {
     return { permitido: false as const, motivo: "divida_nao_aberta" as const, mensagem: `esta dívida está ${r.d.status}` };
   }
-  const a = avaliarPedido(r.divida, r.politica, hojeLocal(ctx.agora), pedido);
+  const a = avaliarPedido(r.divida, r.politica, hojeLocal(ctx.agora), pedido, liberadoDe(r.d));
   if (a.aceitavel) {
     return { permitido: true as const, aceitavel: true as const, texto: descreverProposta(a.proposta), proposta: a.proposta };
   }
@@ -262,6 +289,78 @@ export async function simularAcordo(ctx: ContextoDeCobranca, dividaId: string, p
     motivo: a.motivo,
     detalhe: a.detalhe,
     contraproposta: { texto: descreverProposta(a.contraproposta), ...a.contraproposta },
+    ...(pedido.forma === "a_vista"
+      ? {
+          mensagem:
+            "não ofereça o que a pessoa pediu. Apresente a contraproposta ou, se o problema é o valor, " +
+            "use cobranca_pedir_condicao_melhor (um degrau de cada vez)",
+        }
+      : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// subir o desconto, um degrau de cada vez
+// ---------------------------------------------------------------------------
+
+export const OBJECOES = ["valor_total", "parcela", "momento", "desconfianca", "outro"] as const;
+export type Objecao = (typeof OBJECOES)[number];
+
+/**
+ * "Deixa eu ver se consigo um pouco mais para você": libera o PRÓXIMO degrau
+ * do desconto à vista — nunca o teto, nunca dois de uma vez. Exige a objeção
+ * (o porquê de não servir) e só sobe um degrau por vez de a pessoa falar: o
+ * run que liberou fica gravado, e o mesmo run não sobe de novo.
+ */
+export async function pedirCondicaoMelhor(
+  ctx: ContextoDeCobranca,
+  dividaId: string,
+  pedido: { objecao: Objecao; oQueAPessoaDisse: string; totalPropostoCents?: number },
+) {
+  const r = await dividaDoContato(ctx, dividaId);
+  if ("erro" in r) return r.erro;
+  if (r.d.status !== "aberta") {
+    return { permitido: false as const, motivo: "divida_nao_aberta" as const, mensagem: `esta dívida está ${r.d.status}` };
+  }
+  if (!pedido.oQueAPessoaDisse.trim()) {
+    return {
+      permitido: false as const,
+      motivo: "sem_objecao" as const,
+      mensagem: "antes de pedir condição melhor, entenda com a pessoa por que a oferta não serve",
+    };
+  }
+  if (ctx.sourceJobId && r.d.desconto_liberado_job === ctx.sourceJobId) {
+    return {
+      permitido: false as const,
+      motivo: "um_degrau_por_vez" as const,
+      mensagem:
+        "você já conseguiu uma condição melhor nesta resposta. Apresente-a e espere a pessoa responder; " +
+        "não suba de novo agora",
+    };
+  }
+  const degrau = proximoDegrauAVista(r.divida, r.politica, hojeLocal(ctx.agora), liberadoDe(r.d), pedido.totalPropostoCents);
+  if (degrau.esgotado) {
+    return {
+      permitido: true as const,
+      conseguiu: false as const,
+      mensagem:
+        "não há mais margem no à vista. Não diga que chegou a um limite nem que este é o máximo: diga que vai " +
+        "manter a condição que já apresentou e procure outro caminho (parcelado, quanto cabe por mês, outra data)",
+    };
+  }
+  await ctx.repo.atualizarDivida(dividaId, {
+    desconto_liberado_pct: degrau.descontoPct,
+    desconto_liberado_job: ctx.sourceJobId,
+  });
+  return {
+    permitido: true as const,
+    conseguiu: true as const,
+    nova_oferta: { texto: descreverProposta(degrau.proposta), ...degrau.proposta },
+    ...(degrau.alcancaOProposto === false ? { alcanca_o_valor_proposto: false } : {}),
+    mensagem:
+      "apresente como algo que você conseguiu para a pessoa (\"consegui melhorar um pouco\"), ligado ao que ela " +
+      "contou. Uma oferta só; não diga que pode melhorar mais, nem que existe um teto" +
+      (degrau.alcancaOProposto === false ? ". Ainda não chega no valor que a pessoa propôs: não prometa chegar" : ""),
   };
 }
 
@@ -275,6 +374,8 @@ export async function fecharAcordo(
   pedido: PedidoDoDevedor,
   meio: "pix" | "boleto",
   devedorNome: string,
+  /** O total que a pessoa aceitou na conversa: se a política recalcular outro, não fecha. */
+  totalAceitoCents?: number,
 ) {
   const r = await dividaDoContato(ctx, dividaId);
   if ("erro" in r) return r.erro;
@@ -285,7 +386,7 @@ export async function fecharAcordo(
       mensagem: "já existe um acordo ativo para esta dívida — reenvie o pagamento dele, não feche outro",
     };
   }
-  const a = avaliarPedido(r.divida, r.politica, hojeLocal(ctx.agora), pedido);
+  const a = avaliarPedido(r.divida, r.politica, hojeLocal(ctx.agora), pedido, liberadoDe(r.d));
   if (!a.aceitavel) {
     return {
       permitido: false as const,
@@ -295,6 +396,16 @@ export async function fecharAcordo(
     };
   }
   const p = a.proposta;
+  // Tolerância de R$ 1: arredondamento de quem digitou o valor, não condição diferente.
+  if (totalAceitoCents !== undefined && Math.abs(p.totalCents - totalAceitoCents) > 100) {
+    return {
+      permitido: false as const,
+      motivo: "difere_do_aceito" as const,
+      mensagem:
+        "este pedido dá um total diferente do que a pessoa aceitou — não feche: apresente a condição abaixo e peça um novo aceite",
+      proposta: { texto: descreverProposta(p), ...p },
+    };
+  }
   const { id: acordoId } = await ctx.repo.inserirAcordo({
     divida_id: dividaId,
     contact_id: ctx.contatoId,
@@ -359,13 +470,22 @@ export async function fecharAcordo(
 
 export async function tabular(
   ctx: ContextoDeCobranca,
-  t: { dividaId?: string | null; desfecho: Desfecho; motivo?: string | null; retornarEm?: string | null },
+  t: {
+    dividaId?: string | null;
+    desfecho: Desfecho;
+    motivo?: string | null;
+    retornarEm?: string | null;
+    /** No retorno: o que a pessoa contou e importa na próxima conversa. */
+    contexto?: string | null;
+  },
 ) {
   const todas = await ctx.repo.dividasDoContato(ctx.contatoId);
   if (t.dividaId && !todas.some((d) => d.id === t.dividaId)) return FORA_DA_CONVERSA;
   if (t.desfecho === "retornar_contato" && !t.retornarEm) {
     return { permitido: false as const, motivo: "retorno_sem_data" as const, mensagem: "informe quando retornar (retornar_em)" };
   }
+  // Depois de um sinal de risco, nenhuma volta automática: quem retoma é um humano.
+  if (t.desfecho === "retornar_contato" && emCuidado(todas)) return PAUSADA_POR_CUIDADO;
 
   await ctx.repo.inserirTabulacao({
     divida_id: t.dividaId ?? null,
@@ -380,8 +500,46 @@ export async function tabular(
     await ctx.repo.atualizarDivida(d.id, {
       ultimo_desfecho: t.desfecho,
       ...(t.desfecho === "opt_out" ? { opt_out_em: ctx.agora.toISOString(), retornar_em: null } : {}),
-      ...(t.desfecho === "retornar_contato" ? { retornar_em: t.retornarEm } : {}),
+      ...(t.desfecho === "retornar_contato"
+        ? { retornar_em: t.retornarEm, contexto_do_retorno: t.contexto?.trim() ? t.contexto.trim().slice(0, 600) : null }
+        : {}),
     });
   }
   return { permitido: true as const, registrado: t.desfecho };
+}
+
+// ---------------------------------------------------------------------------
+// sinal de risco à vida
+// ---------------------------------------------------------------------------
+
+/**
+ * A pessoa falou em se machucar ou em não querer viver: a cobrança PARA para
+ * todas as dívidas dela (nenhum valor, nenhum retorno automático) até um
+ * humano liberar, e volta os contatos de ajuda da cidade dela. Não exige
+ * identidade — o cuidado vem antes de tudo — e não devolve nada da dívida.
+ */
+export async function registrarCuidado(ctx: ContextoDeCobranca, sinal: string) {
+  const todas = await ctx.repo.dividasDoContato(ctx.contatoId);
+  for (const d of todas) {
+    await ctx.repo.atualizarDivida(d.id, { cuidado_em: d.cuidado_em ?? ctx.agora.toISOString(), retornar_em: null });
+  }
+  if (todas.length > 0) {
+    await ctx.repo.inserirTabulacao({
+      divida_id: null,
+      contact_id: ctx.contatoId,
+      desfecho: "cobranca_indisponivel",
+      motivo: `cuidado: ${sinal.slice(0, 160)}`,
+      source_job_id: ctx.sourceJobId,
+    });
+  }
+  const comLocal = todas.find((d) => d.devedor_cidade || d.devedor_uf);
+  return {
+    permitido: true as const,
+    cobranca_pausada: true as const,
+    ajuda: recursosDeAjuda(comLocal?.devedor_cidade ?? null, comLocal?.devedor_uf ?? null),
+    mensagem:
+      "cobrança pausada. Passe para um humano com urgência (crm_request_human_handoff). Acolha, pergunte com " +
+      "clareza se a pessoa pensa em se machucar e se tem alguém por perto, e passe os contatos acima citando a " +
+      "cidade. Use só esses contatos; não fale de valor, acordo ou retorno",
+  };
 }
